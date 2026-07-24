@@ -1,6 +1,7 @@
 from harness.feedback.stuck import StuckDetector, signature_of
 from harness.feedback.types import FailureCategory
 
+
 def test_signature_stable_ignores_order():
     assert signature_of(["a", "b"], FailureCategory.LOGIC) == \
            signature_of(["b", "a"], FailureCategory.LOGIC)

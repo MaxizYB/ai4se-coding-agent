@@ -1,5 +1,6 @@
-from harness.feedback.types import FailureCategory
 from harness.feedback.strategy import strategy_hint
+from harness.feedback.types import FailureCategory
+
 
 def test_env_hint_mentions_deps_not_logic():
     h = strategy_hint(FailureCategory.ENV, exc="ModuleNotFoundError")

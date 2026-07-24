@@ -1,5 +1,6 @@
-from harness.feedback.types import TestFailure, TestRunResult, FailureCategory
 from harness.feedback.classifier import classify_failure, classify_run
+from harness.feedback.types import FailureCategory, TestFailure, TestRunResult
+
 
 def _f(exc): return TestFailure("n.test", exc, "m")
 

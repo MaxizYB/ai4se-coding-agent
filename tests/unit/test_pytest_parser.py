@@ -1,6 +1,6 @@
 from pathlib import Path
+
 from harness.feedback.pytest_parser import parse_pytest_output
-from harness.feedback.types import FailureCategory
 
 FIX = Path(__file__).parent.parent / "fixtures"
 

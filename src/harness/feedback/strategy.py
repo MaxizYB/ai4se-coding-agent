@@ -1,5 +1,6 @@
 from harness.feedback.types import FailureCategory
 
+
 def strategy_hint(category, *, nodeid="", expected=None, actual=None,
                   budget_s=None, exc="") -> str:
     if category is None:

@@ -1,10 +1,10 @@
 import re
-from dataclasses import dataclass
-from harness.feedback.types import FailureCategory, FailureReport
-from harness.feedback.pytest_parser import parse_pytest_output
+
 from harness.feedback.classifier import classify_run
+from harness.feedback.pytest_parser import parse_pytest_output
 from harness.feedback.strategy import strategy_hint
 from harness.feedback.stuck import StuckDetector, signature_of
+from harness.feedback.types import FailureCategory, FailureReport
 
 _EXPECTED = re.compile(r"assert\s+(?P<a>[^=]+?)\s*==\s*(?P<b>[^\s]+)")
 

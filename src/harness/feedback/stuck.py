@@ -1,5 +1,7 @@
 import hashlib
+
 from harness.feedback.types import FailureCategory
+
 
 def signature_of(failing: list[str], category: FailureCategory) -> str:
     raw = f"{category.value}|{','.join(sorted(failing))}"
