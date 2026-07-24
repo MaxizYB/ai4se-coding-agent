@@ -32,3 +32,6 @@ htmlcov/
 
 # git worktrees (local isolation)
 .worktrees/
+
+# superpowers SDD scratch
+.superpowers/
