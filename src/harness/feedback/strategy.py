@@ -12,5 +12,5 @@ def strategy_hint(category, *, nodeid="", expected=None, actual=None,
         ea = f"期望 {expected}，实际 {actual}。" if expected or actual else ""
         return f"断言失败@{nodeid}：{ea}修实现逻辑。"
     if category is FailureCategory.TIMEOUT:
-        return f"测试超时（{budget_s}s）。疑似死循环或慢路径，重审算法。"
+        return f"测试超时（{budget_s if budget_s is not None else '?'}s）。疑似死循环或慢路径，重审算法。"
     return "未分类失败，原始 traceback 见下。先诊断再改。"

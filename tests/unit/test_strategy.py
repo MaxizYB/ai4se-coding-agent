@@ -15,6 +15,12 @@ def test_timeout_hint_mentions_budget():
     h = strategy_hint(FailureCategory.TIMEOUT, budget_s=30)
     assert "30" in h and ("死循环" in h or "超时" in h)
 
+def test_timeout_hint_no_none_when_budget_unknown():
+    # budget_s=None (e.g. engine short-circuit without a configured budget) must
+    # render a placeholder, never the literal string "None".
+    h = strategy_hint(FailureCategory.TIMEOUT, budget_s=None)
+    assert "None" not in h and "超时" in h
+
 def test_unknown_hint_mentions_diagnose():
     assert "诊断" in strategy_hint(FailureCategory.UNKNOWN)
 
