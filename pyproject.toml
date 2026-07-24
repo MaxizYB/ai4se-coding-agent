@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "harness"
+version = "0.1.0"
+requires-python = ">=3.11"
+# Core harness kernel is stdlib-only; heavy deps are optional so the
+# feedback/guardrail/parsing tasks stay hermetic without network.
+dependencies = []
+
+[project.optional-dependencies]
+full = ["cryptography>=42", "fastapi>=0.110", "uvicorn>=0.29", "httpx>=0.27"]
+dev = ["pytest>=8", "ruff"]
+
+[project.scripts]
+harness = "harness.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra -q"
+markers = ["live: tests calling a real LLM (deselect with -m 'not live')"]

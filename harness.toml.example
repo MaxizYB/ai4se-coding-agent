@@ -1,0 +1,22 @@
+# Example harness config. Copy to harness.toml and edit. All fields optional.
+[scope]
+project_root = "."
+allowed_write_dirs = ["src"]
+
+[guardrails]
+dangerous_shell_patterns = ["rm\\s+-rf?", "git\\s+push\\s+(-f|--force)", "DROP\\s+TABLE", ":\\(\\)\\s*\\{"]
+network_commands = ["pip install", "npm install", "curl", "wget"]
+fail_closed_when_noninteractive = true
+
+[budget]
+max_iterations = 20
+max_parse_failures = 5
+stuck_repeat_n = 3
+stuck_no_progress_m = 4
+test_timeout_s = 30
+
+[feedback]
+hint_history_lines = 8
+
+[context]
+max_history = 8
