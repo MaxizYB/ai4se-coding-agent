@@ -6,6 +6,9 @@ from harness.feedback.strategy import strategy_hint
 from harness.feedback.stuck import StuckDetector, signature_of
 from harness.feedback.types import FailureCategory, FailureReport
 
+# Targets simple `assert a == b` (the harness's TDD red-green targets); does not
+# parse chained/composite asserts — those degrade gracefully to None captures,
+# and strategy_hint already tolerates missing expected/actual.
 _EXPECTED = re.compile(r"assert\s+(?P<a>[^=]+?)\s*==\s*(?P<b>[^\s]+)")
 
 class FeedbackEngine:
@@ -20,13 +23,17 @@ class FeedbackEngine:
         if getattr(tool_result, "exit_code", 0) == 124 or "TimeoutExpired" in stderr:
             hint = strategy_hint(FailureCategory.TIMEOUT, budget_s=self.test_timeout_s)
             sig = signature_of(["<timeout>"], FailureCategory.TIMEOUT)
-            return FailureReport(False, FailureCategory.TIMEOUT, ["<timeout>"], hint,
-                                 stderr[-self.hint_history_lines*80:], None, None, sig, False)
+            return FailureReport(is_green=False, category=FailureCategory.TIMEOUT,
+                                 failing=["<timeout>"], hint=hint,
+                                 traceback_excerpt=stderr[-self.hint_history_lines*80:],
+                                 expected=None, actual=None, signature=sig, stuck=False)
         run = parse_pytest_output(tool_result.exit_code, getattr(tool_result, "stdout", ""),
                                   stderr, getattr(tool_result, "junit_xml", ""))
         cat = classify_run(run)
         if cat is None:
-            return FailureReport(True, None, [], "", "", None, None, "", False)
+            return FailureReport(is_green=True, category=None, failing=[], hint="",
+                                 traceback_excerpt="", expected=None, actual=None,
+                                 signature="", stuck=False)
         failing = [f.nodeid for f in run.failures]
         msg = run.failures[0].message if run.failures else ""
         m = _EXPECTED.search(msg)
@@ -38,4 +45,6 @@ class FeedbackEngine:
         sig = signature_of(failing, cat)
         stuck = self.detector.update(sig, failing)
         excerpt = "\n".join((run.failures[0].traceback or "").splitlines()[-self.hint_history_lines:])
-        return FailureReport(False, cat, failing, hint, excerpt, expected, actual, sig, stuck)
+        return FailureReport(is_green=False, category=cat, failing=failing, hint=hint,
+                             traceback_excerpt=excerpt, expected=expected, actual=actual,
+                             signature=sig, stuck=stuck)
