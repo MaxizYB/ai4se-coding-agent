@@ -30,3 +30,14 @@ def test_progress_resets_stuck():
     assert d.update(signature_of(["a"], FailureCategory.LOGIC), ["a"]) is True
     d.reset()
     assert d.update(signature_of(["a"], FailureCategory.LOGIC), ["a"]) is False
+
+def test_shrink_resets_no_progress():
+    # Shrinking the failing set is progress -> _no_progress resets to 0, so the
+    # detector must NOT declare stuck. repeat_n=3 keeps the repeat branch quiet;
+    # no_progress_m=2 means without the reset, call 3 (no_progress==2) would trip.
+    d = StuckDetector(repeat_n=3, no_progress_m=2)
+    sig_3 = signature_of(["a", "b", "c"], FailureCategory.LOGIC)
+    sig_1 = signature_of(["a"], FailureCategory.LOGIC)
+    d.update(sig_3, ["a", "b", "c"])   # no_progress=1, _best_failing=3
+    d.update(sig_1, ["a"])             # shrink 3->1 resets no_progress=0
+    assert d.update(sig_1, ["a"]) is False  # no_progress=1 (<2) -> NOT stuck
