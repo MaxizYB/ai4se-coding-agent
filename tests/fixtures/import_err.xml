@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuite name="t" tests="0" failures="0" errors="1">
+  <testcase name="collection" classname="t">
+    <error type="ModuleNotFoundError" message="No module named 'foo'">ModuleNotFoundError: No module named 'foo'</error>
+  </testcase>
+</testsuite>
