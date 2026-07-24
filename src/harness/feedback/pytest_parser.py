@@ -14,14 +14,21 @@ def _nodeid(clsname: str, name: str) -> str:
     return f"{clsname}.{name}" if clsname else name
 
 def parse_pytest_output(exit_code: int, stdout: str, stderr: str, junit_xml: str) -> TestRunResult:
-    if not junit_xml.strip():
+    # SPEC §3.6: XML missing OR parse-failed (truncated/non-XML from a crashed
+    # pytest or OOM mid-write) -> synthesize one pseudo-failure from stderr.
+    root = None
+    if junit_xml.strip():
+        try:
+            root = ET.fromstring(junit_xml)
+        except ET.ParseError:
+            root = None
+    if root is None:
         # F5: use the LAST regex match in stderr (the actually-raised exception),
         # not the first, so chained exceptions classify the raised frame.
         matches = _EXC_RE.findall(stderr)
         exc = matches[-1] if matches else "UnknownError"
         msg = stderr.strip().splitlines()[-1] if stderr.strip() else ""
         return TestRunResult(0, 0, 0, 1, [TestFailure("<collection>", exc, msg)], exit_code)
-    root = ET.fromstring(junit_xml)
     total = int(root.get("tests", 0)); failed = int(root.get("failures", 0))
     errors = int(root.get("errors", 0)); passed = total - failed - errors
     failures = []

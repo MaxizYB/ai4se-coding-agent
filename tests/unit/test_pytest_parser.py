@@ -25,3 +25,10 @@ def test_import_error_from_collection():
 def test_no_xml_falls_back_to_stderr():
     r = parse_pytest_output(2, "", "ModuleNotFoundError: No module named 'foo'", "")
     assert not r.is_green and r.failures[0].exc_type == "ModuleNotFoundError"
+
+def test_malformed_xml_falls_back_to_stderr():
+    # SPEC §3.6: truncated/non-XML junit (crashed pytest, OOM mid-write) must
+    # not raise; fall through to the SAME stderr-fallback path as empty XML.
+    r = parse_pytest_output(2, "", "RuntimeError: boom", "<testsuite><testcase")
+    assert not r.is_green and r.errors == 1
+    assert r.failures[0].exc_type == "RuntimeError"  # synthesized from stderr
