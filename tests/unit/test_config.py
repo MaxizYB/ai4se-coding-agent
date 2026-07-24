@@ -23,6 +23,8 @@ allowed_write_dirs = ["src", "lib"]
 [budget]
 max_iterations = 5
 test_timeout_s = 10
+[context]
+max_history = 4
 """
     with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as p:
         p.write(toml)
@@ -30,4 +32,5 @@ test_timeout_s = 10
     os.unlink(p.name)
     assert c.allowed_write_dirs == ["src", "lib"]
     assert c.max_iterations == 5 and c.test_timeout_s == 10
+    assert c.max_history == 4  # [context] section honored (was silently ignored)
     assert c.fail_closed_when_noninteractive is True  # untouched keeps default

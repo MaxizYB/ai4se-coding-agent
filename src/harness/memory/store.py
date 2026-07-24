@@ -24,5 +24,11 @@ class MemoryStore:
     def recent_log(self, n: int) -> list[dict]:
         if not os.path.exists(self.log_path):
             return []
+        out: list[dict] = []
         with open(self.log_path) as f:
-            return [json.loads(x) for x in f.read().splitlines()[-n:]]
+            for line in f.read().splitlines():
+                try:
+                    out.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+        return out[-n:]

@@ -32,6 +32,7 @@ def load_config(path: str | None) -> Config:
     gr = data.get("guardrails", {})
     bud = data.get("budget", {})
     fb = data.get("feedback", {})
+    ctx = data.get("context", {})
     cfg.project_root = scope.get("project_root", cfg.project_root)
     cfg.allowed_write_dirs = scope.get("allowed_write_dirs", cfg.allowed_write_dirs)
     cfg.dangerous_shell_patterns = gr.get("dangerous_shell_patterns", cfg.dangerous_shell_patterns)
@@ -43,4 +44,5 @@ def load_config(path: str | None) -> Config:
     cfg.stuck_no_progress_m = bud.get("stuck_no_progress_m", cfg.stuck_no_progress_m)
     cfg.test_timeout_s = bud.get("test_timeout_s", cfg.test_timeout_s)
     cfg.hint_history_lines = fb.get("hint_history_lines", cfg.hint_history_lines)
+    cfg.max_history = ctx.get("max_history", cfg.max_history)
     return cfg

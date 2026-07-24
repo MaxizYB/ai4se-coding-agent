@@ -6,9 +6,11 @@ build-backend = "setuptools.build_meta"
 name = "harness"
 version = "0.1.0"
 requires-python = ">=3.11"
-# Core harness kernel is stdlib-only; heavy deps are optional so the
-# feedback/guardrail/parsing tasks stay hermetic without network.
-dependencies = []
+# Core harness kernel is stdlib-only except for `cryptography`, which backs the
+# core CredentialStore (src/harness/credentials.py) imported at module top by
+# both production code and the unit test suite. Heavy web deps stay optional so
+# the feedback/guardrail/parsing tasks stay hermetic without network.
+dependencies = ["cryptography>=42"]
 
 [project.optional-dependencies]
 full = ["cryptography>=42", "fastapi>=0.110", "uvicorn>=0.29", "httpx>=0.27"]

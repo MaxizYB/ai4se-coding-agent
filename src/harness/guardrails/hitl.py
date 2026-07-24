@@ -9,13 +9,13 @@ class Approver(Protocol):
 
 class StubApprover:
     def __init__(self, approve: bool): self.approve = approve
-    def ask(self, action, reason): return self.approve
+    def ask(self, action: Action, reason: str) -> bool: return self.approve
 
 class FailClosedApprover:
-    def ask(self, action, reason): return False
+    def ask(self, action: Action, reason: str) -> bool: return False
 
 class ConsoleApprover:
-    def ask(self, action, reason):
+    def ask(self, action: Action, reason: str) -> bool:
         ans = input(f"APPROVE? {reason} [{type(action).__name__}] [y/N]: ")
         return ans.strip().lower() == "y"
 
