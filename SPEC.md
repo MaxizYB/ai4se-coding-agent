@@ -88,7 +88,7 @@
 
 ### 3.8 `Config`（声明式规则）
 - 来源：`harness.toml`。
-- 字段：`scope.project_root`、`scope.allowed_write_dirs`、`guardrails.dangerous_shell_patterns`、`guardrails.network_commands`、`guardrails.fail_closed_when_noninteractive`、`budget.{max_iterations,max_parse_failures,stuck_repeat_n,stuck_no_progress_m,test_timeout_s}`、`feedback.{hint_history_lines, stuck_signature}`。
+- 字段：`scope.project_root`、`scope.allowed_write_dirs`、`guardrails.dangerous_shell_patterns`、`guardrails.network_commands`、`guardrails.fail_closed_when_noninteractive`、`budget.{max_iterations,max_parse_failures,stuck_repeat_n,stuck_no_progress_m,test_timeout_s}`、`feedback.hint_history_lines`、`context.max_history`。
 - 行为：加载 + 校验（缺字段给默认；非法值报错）。
 - 错误：文件不存在 → 用安全默认并提示；非法 → 拒绝启动。
 

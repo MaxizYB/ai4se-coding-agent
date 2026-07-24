@@ -99,10 +99,13 @@ build-backend = "setuptools.build_meta"
 name = "harness"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["cryptography>=42", "fastapi>=0.110", "uvicorn>=0.29", "httpx>=0.27"]
+# F8: core harness kernel is stdlib-only; heavy deps are optional so the
+# feedback/guardrail/parsing tasks (T1-T10) stay hermetic without network.
+dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-httpx", "ruff"]
+full = ["cryptography>=42", "fastapi>=0.110", "uvicorn>=0.29", "httpx>=0.27"]
+dev = ["pytest>=8", "ruff"]
 
 [project.scripts]
 harness = "harness.cli:main"
@@ -153,8 +156,8 @@ hint_history_lines = 8
 
 - [ ] **Step 4: Create empty packages + verify pytest collects nothing cleanly**
 
-Run: `mkdir -p src/harness tests/unit && touch src/harness/__init__.py tests/__init__.py tests/unit/__init__.py && pip install -e ".[dev]" && make test`
-Expected: pytest runs, 0 tests, exit 0 (no collection errors).
+Run: `mkdir -p src/harness tests/unit && touch src/harness/__init__.py tests/__init__.py tests/unit/__init__.py && pip install -e ".[dev]" && pytest -m "not live"`
+Expected: pytest exits 5 (no tests collected) or 0 — the gate is **no collection errors**. (F4: modern pytest returns exit 5 on an empty suite, not 0.)
 
 - [ ] **Step 5: Commit**
 
@@ -483,6 +486,7 @@ class FailureCategory(str, Enum):
 
 @dataclass
 class TestFailure:
+    __test__ = False  # silence pytest collection warning (F9)
     nodeid: str
     exc_type: str
     message: str
@@ -490,15 +494,17 @@ class TestFailure:
 
 @dataclass
 class TestRunResult:
+    __test__ = False  # silence pytest collection warning (F9)
     total: int
     passed: int
     failed: int
     errors: int
     failures: list[TestFailure] = field(default_factory=list)
+    exit_code: int = 0  # F3: is_green must include exit_code==0 (SPEC §3.6)
 
     @property
     def is_green(self) -> bool:
-        return self.failed == 0 and self.errors == 0
+        return self.failed == 0 and self.errors == 0 and self.exit_code == 0
 
 @dataclass
 class FailureReport:
@@ -519,18 +525,24 @@ import re
 import xml.etree.ElementTree as ET
 from harness.feedback.types import TestFailure, TestRunResult
 
-_EXC_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_.]*Error|[A-Za-z_][A-Za-z0-9_.]*Exception):")
+# F2: include `Expired` so subprocess.TimeoutExpired in stderr reaches TIMEOUT.
+_EXC_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception|Expired)):")
 
 def _nodeid(clsname: str, name: str) -> str:
+    # NOTE (F1): junit gives classname (dotted module) + name, NOT pytest's
+    # `path::name` selector. We emit `classname.name` as the display nodeid;
+    # correlation to Task.test_selector is by TEST-NAME suffix (see Task 7
+    # `test_name_of`), since the red-green fixer normally targets one test.
     return f"{clsname}.{name}" if clsname else name
 
 def parse_pytest_output(exit_code: int, stdout: str, stderr: str, junit_xml: str) -> TestRunResult:
     if not junit_xml.strip():
-        m = _EXC_RE.search(stderr)
-        exc = m.group(1) if m else "UnknownError"
+        # F5: use the LAST regex match in stderr (the actually-raised exception),
+        # not the first, so chained exceptions classify the raised frame.
+        matches = _EXC_RE.findall(stderr)
+        exc = matches[-1] if matches else "UnknownError"
         msg = stderr.strip().splitlines()[-1] if stderr.strip() else ""
-        return TestRunResult(total=0, passed=0, failed=0, errors=1,
-                             failures=[TestFailure("<collection>", exc, msg)])
+        return TestRunResult(0, 0, 0, 1, [TestFailure("<collection>", exc, msg)], exit_code)
     root = ET.fromstring(junit_xml)
     total = int(root.get("tests", 0)); failed = int(root.get("failures", 0))
     errors = int(root.get("errors", 0)); passed = total - failed - errors
@@ -542,8 +554,7 @@ def parse_pytest_output(exit_code: int, stdout: str, stderr: str, junit_xml: str
             if el is not None:
                 failures.append(TestFailure(nodeid, el.get("type", "UnknownError"),
                                             el.get("message", ""), el.text or ""))
-    return TestRunResult(total=total, passed=max(passed, 0), failed=failed,
-                         errors=errors, failures=failures)
+    return TestRunResult(total, max(passed, 0), failed, errors, failures, exit_code)
 ```
 
 - [ ] **Step 5: Run test to verify it passes**
@@ -582,8 +593,14 @@ def _f(exc): return TestFailure("n.test", exc, "m")
 def test_env_classes():
     assert classify_failure(_f("ModuleNotFoundError")) is FailureCategory.ENV
     assert classify_failure(_f("ImportError")) is FailureCategory.ENV
-    assert classify_failure(_f("CollectionError")) is FailureCategory.ENV
+    # F7: CollectionError removed — pytest collection errors surface as their
+    # underlying exception type; there is no builtin CollectionError.
     assert classify_failure(_f("SyntaxError")) is FailureCategory.ENV
+
+def test_qualified_exception_names_stripped():  # F6: bare-name match
+    assert classify_failure(_f("subprocess.TimeoutExpired")) is FailureCategory.TIMEOUT
+    assert classify_failure(_f("builtins.ValueError")) is FailureCategory.LOGIC
+    assert classify_failure(_f("json.decoder.JSONDecodeError")) is FailureCategory.UNKNOWN
 
 def test_logic_classes():
     assert classify_failure(_f("AssertionError")) is FailureCategory.LOGIC
@@ -616,15 +633,18 @@ Expected: FAIL — `ModuleNotFoundError`.
 # src/harness/feedback/classifier.py
 from harness.feedback.types import FailureCategory, TestFailure, TestRunResult
 
-_ENV = {"ModuleNotFoundError", "ImportError", "CollectionError", "SyntaxError"}
+_ENV = {"ModuleNotFoundError", "ImportError", "SyntaxError"}     # F7: dropped phantom CollectionError
 _LOGIC = {"AssertionError", "AttributeError", "NameError", "TypeError", "ValueError"}
 
 def classify_failure(failure: TestFailure) -> FailureCategory:
-    if failure.exc_type == "TimeoutExpired":
+    # F6: strip module prefix so qualified names (subprocess.TimeoutExpired,
+    # builtins.ValueError, json.decoder.JSONDecodeError) classify correctly.
+    exc = failure.exc_type.rsplit('.', 1)[-1]
+    if exc == "TimeoutExpired":
         return FailureCategory.TIMEOUT
-    if failure.exc_type in _ENV:
+    if exc in _ENV:
         return FailureCategory.ENV
-    if failure.exc_type in _LOGIC:
+    if exc in _LOGIC:
         return FailureCategory.LOGIC
     return FailureCategory.UNKNOWN
 
