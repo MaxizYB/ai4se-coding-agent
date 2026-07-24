@@ -657,7 +657,7 @@ def classify_run(result: TestRunResult) -> FailureCategory | None:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/unit/test_classifier.py -v`
-Expected: PASS (5 tests).
+Expected: PASS (6 tests).
 
 - [ ] **Step 5: Commit**
 
