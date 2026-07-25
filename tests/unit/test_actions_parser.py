@@ -1,0 +1,51 @@
+import pytest
+
+from harness.actions.parser import ParseError, parse_action
+from harness.actions.protocol import (
+    EditFile,
+    Finish,
+    ReadFile,
+    RunShell,
+    RunTests,
+    WriteFile,
+)
+
+
+def test_parse_simple_param_action():
+    a = parse_action("sure, here:\nACTION: read_file\nPATH: src/foo.py\n")
+    assert a == ReadFile("src/foo.py")
+
+
+def test_parse_write_file_with_content_block():
+    raw = "ACTION: write_file\nPATH: a.py\n<<<\ndef f():\n    return 1\n>>>\n"
+    assert parse_action(raw) == WriteFile("a.py", "def f():\n    return 1\n")
+
+
+def test_parse_edit_file_old_new_blocks():
+    raw = (
+        "ACTION: edit_file\nPATH: a.py\n<<<OLD\n    return 1\n>>>OLD\n"
+        "<<<NEW\n    return 2\n>>>NEW\n"
+    )
+    assert parse_action(raw) == EditFile("a.py", "    return 1\n", "    return 2\n")
+
+
+def test_parse_run_tests_and_shell_and_finish():
+    assert parse_action("ACTION: run_tests\nARGS: t.py::test_a\n") == RunTests("t.py::test_a")
+    assert parse_action("ACTION: run_tests\n") == RunTests("")
+    assert parse_action("ACTION: run_shell\nCOMMAND: pip list\n") == RunShell("pip list")
+    assert parse_action("ACTION: finish\nREASON: green\n") == Finish("green")
+
+
+def test_tolerates_surrounding_prose():
+    a = parse_action("Let me read it.\nACTION: read_file\nPATH: x.py\nNow I'll act.")
+    assert a == ReadFile("x.py")
+
+
+def test_parse_error_on_missing_action():
+    with pytest.raises(ParseError):
+        parse_action("no action here at all")
+
+
+def test_parse_error_on_unterminated_block():
+    with pytest.raises(ParseError):
+        parse_action("ACTION: write_file\nPATH: a.py\n<<<\nnever closed")
