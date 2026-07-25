@@ -9,15 +9,20 @@
 ## 1. 问题陈述
 
 ### 1.1 要解决什么问题
-把"只会产生下一步设想的 LLM"封装成一台能**稳定、可验证地完成 TDD red-green 修复**的机器：给定一个仓库和一个失败测试，harness 自主循环（读相关文件 → 调 LLM 决定动作 → 解析 → 治理拦截 → 执行 → 跑测试 → 解析并分类失败 → 按策略回灌），直到测试变绿或客观终止条件触发。
+把"只会产生下一步设想的 LLM"封装成一台**对话式通用编码 agent**(类 Claude / Codex / OpenCode 的 CLI):用户用自然语言下达任务("给 X 加个登录函数"/"修 Y 里的 bug"/"重构 Z"),harness 多轮交互、自由 read/write/edit/shell/run_tests 完成任务,**按测试结果自我修正**(§A.2),危险动作内联审批,完成自判停机。
+
+这是对作业范围的纠偏:招牌任务**不再**是窄的"单测试 red-green 修复",而是通用编码 agent;red-green 修复保留为 `--accept <测试>` 的一种用法(给定验收测试 → 跑到绿)。内核(主循环/解析/工具/治理/HITL/反馈/上下文/记忆/凭据/配置)复用;深做维度(**反馈闭环**)不变——它正是 §A.2"据测试结果自我修正"的落点,现在在对话里随时可见(agent 选择跑测试时启动分类+纠错)。
+
+交互外壳的设计细节见 `docs/superpowers/specs/2026-07-25-interactive-chat-cli-design.md`。
 
 ### 1.2 为什么这是 harness 问题而非 LLM 问题
 - **决策封装、动作工具、上下文记忆、治理护栏、反馈闭环、配置** 六件事都必须是**我编写的确定性代码**，不是提示词。
 - 移除真实 LLM（换 mock）后，harness 的每个核心机制仍能用确定性单测验证（§A.4-C 硬判据）——这才算"我实现了一个 harness"。
 
 ### 1.3 目标用户
-- 上 TDD 课的学生 / 个人开发者：写好失败测试后，让 harness 把实现补到绿。
-- 本课程评审者：检验作者是否真的"编码了机制"而非"写了提示词"。
+- 个人开发者:在 CLI 里用自然语言驱动 agent 自由修改项目(增/改/纠错),像用 Claude Code / Codex 那样。
+- TDD 开发者:写好失败测试后,`harness chat --accept <测试>` 让 agent 把实现补到绿。
+- 本课程评审者:检验作者是否真的"编码了机制"而非"写了提示词"。
 
 ### 1.4 为什么值得做
 它用最小、最可编码的形态逼出 harness 六维度的真实工程：反馈信号最客观（红→绿）、危险动作最具体（破坏性 shell）、记忆最自然（项目约定）。深度落在**反馈闭环**，直接对齐 §A.4-C 与 §A.6 机制演示。
@@ -32,6 +37,7 @@
 - **US4 · 可观测的循环**：作为用户，我能看到每一轮的动作、护栏判定、测试结果与失败分类，以便理解 agent 为什么这么做。
 - **US5 · 全新机器从零运行**：作为新用户，我单条 `docker run` 或 `pip install` 就能跑起来并安全配上自己的 key，以便零环境折腾。
 - **US6 · 网页演示**（§五.9）：作为评审者，我打开公网 URL 提交任务、流式观看循环、看到终局与 diff，以便不装环境也能验收。
+- **US7 · 对话式编码**（范围纠偏后招牌）：作为开发者，我在 CLI 里 `harness chat` 用自然语言驱动 agent——"修这个 bug"/"加这个功能"/"重构这块"——agent 自由读写文件、跑 shell、跑测试自检,危险动作当场问我,完成自判停下、我可继续追问;以便像用 Claude/Codex 那样自由改项目(含纠错)。
 
 ---
 
@@ -98,6 +104,14 @@
 ### 3.10 薄 WebUI（§五.9）
 - FastAPI：表单（仓库/测试选择器/预算）→ 后台跑 `AgentRunner` → SSE 流式推送每轮（动作/护栏判定/测试结果/失败类+hint）→ 终局 + edits diff；交互模式下 HITL 在 UI 弹审批。
 - 边界：纯展示层，不含 harness 逻辑；非交互（演示/CI）fail-closed。
+
+### 3.11 `ChatRunner`（对话式 REPL，范围纠偏后招牌，详见 design delta）
+- `harness chat [--repo PATH] [--accept TEST]`：多轮交互 REPL。用户自然语言输入(或 `/help`/`/exit`/`/clear`/`/tests`/`/status`)→ agent 内层循环(每轮 LLM 先述后做、抽 ACTION、治理拦截、执行、run_tests 时触发 FeedbackEngine 分类+纠错)→ Finish/预算/`--accept` 绿 即停回提示符。
+- `harness task "<目标>" [--accept TEST]`：同一引擎非交互(一次性)版,FaliClosedApprover。
+- 行为:agent 自由 read/write/edit/shell/run_tests(由 LLM 决定);HITL 用 `ConsoleApprover`(内联 y/N);Presenter(`cli/presenter.py`)显示 prose/动作/结果/反馈分类。
+- 终止策略:`ChatPolicy`(Finish/预算/--accept 绿)与 `FixPolicy`(绿/卡住/预算)共用 `AgentRunner.step()`。
+- 边界:复用内核全部组件;本轮不做 token 流式与跨会话 /resume。
+- 错误:ParseError 回灌(连续超限→ERROR);子件异常记日志。
 
 ---
 
@@ -223,6 +237,7 @@ while not terminated:
 - **WebUI**：提交→流式→终局+diff，公网 URL 可访问。
 - **CI**：`.gitlab-ci.yml` 的 `unit-test` job 绿 + 镜像构建；默认 pipeline 最后一次 pass。
 - **离线可测**：默认测试集无网、mock-LLM 驱动整条 `AgentRunner`。
+- **对话式 REPL**（范围纠偏后招牌）：`harness chat` 在 mock-LLM + 假输入流下确定性走完 用户消息→(read/edit/run_tests/…→)Finish 往返;HITL `y` 放行/`n` 拦截;`/exit` `/clear` `/tests` 生效;`--accept` 绿即停。`AgentRunner.step()`、`ChatRunner`、Presenter、`split_prose_and_action` 均有 mock 单测(§A.4-C 不退化)。
 
 ---
 
@@ -260,6 +275,8 @@ read_file / list_dir / write_file / edit_file / run_shell（治理）/ run_tests
 
 ### 11.5 重点维度与理由
 **反馈闭环**为唯一最深贡献（taxonomy + 策略映射 + 卡住检测的机制密度）；`ContextManager` 升级为工程化投递层（选择/裁剪/强调/快照，皆可测）以保障反馈有效投递，但深度仍归反馈闭环。其余维度（决策/工具/治理/记忆/配置）保持可运行最低实现。
+
+> **范围纠偏注**：招牌任务从"单测试 red-green 修复"扩为"对话式通用编码 agent"(§1.1/§3.11/US7)。这**不改变**深做维度——反馈闭环仍是 §A.2"据测试结果自我修正"的落点,只是在对话 REPL 里随时可用(`ChatRunner` 在 agent 跑 run_tests 时调用 `FeedbackEngine`,把分类+hint 经 Presenter 显示并回灌)。交互外壳(`ChatRunner`/Presenter/`step` 重构)是新增的展示与编排层,内核机制(可确定性 mock 单测)不退化。
 
 ### 11.6 机制如何编码（呼应 §A.4）
 - 反馈信号 = `FeedbackEngine`（解析→客观判定→回灌），确定性单测。
