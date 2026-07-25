@@ -87,7 +87,7 @@ worktree `.worktrees/feedback-core`（`feat/feedback-core`）。每 task：新�
 
 ## Phase 8 — 范围纠偏:对话式 CLI（feat/chat）
 
-- **节点**：用户要求把招牌任务从"TDD red-green 一次修一个失败"扩成"对话式编码 agent"（Claude/Codex 风格多轮 REPL + 一次性 `task` 模式）。经 `brainstorming` 技能厘清范围 → SPEC delta（commit `86c7b72`，追加 §五.10 interactive 包设计：`ChatRunner` 复用 AgentRunner 组件但自带 REPL 循环、`build_chat` 通用 chatty 提示、`Presenter` ANSI 渲染、`split_prose_and_action` 解析散文+动作）→ 6-task TDD 计划（T1 split_prose `7b0aed2`、T2 Presenter `dbff7e6`、T3 build_chat `8c44c7b`、T4 ChatRunner REPL `29a6553`、T5 cli `chat`/`task` 子命令 `688e36f`、T6 本条目 + examples/demo + README §Conversational REPL）→ 合入 main。**关键设计决策**：不动 `AgentRunner.run`（批处理循环保持原状、108 旧测绿 by construction），`ChatRunner` 独立循环（终止/呈现/approver 真有分歧才 justify divergence）；HITL 在危险/网络动作前 `y/N`，`--accept <selector>` 达绿自动收尾。
+- **节点**：用户要求把招牌任务从"TDD red-green 一次修一个失败"扩成"对话式编码 agent"（Claude/Codex 风格多轮 REPL + 一次性 `task` 模式）。经 `brainstorming` 技能厘清范围 → SPEC delta（commit `86c7b72`，追加 §五.10 interactive 包设计：`ChatRunner` 复用 AgentRunner 组件但自带 REPL 循环、`build_chat` 通用 chatty 提示、`Presenter` 纯文本流式渲染、`split_prose_and_action` 解析散文+动作）→ 6-task TDD 计划（T1 split_prose `7b0aed2`、T2 Presenter `dbff7e6`、T3 build_chat `8c44c7b`、T4 ChatRunner REPL `29a6553`、T5 cli `chat`/`task` 子命令 `688e36f`、T6 本条目 + examples/demo + README §Conversational REPL）→ 合入 main。**关键设计决策**：不动 `AgentRunner.run`（批处理循环保持原状、108 旧测绿 by construction），`ChatRunner` 独立循环（终止/呈现/approver 真有分歧才 justify divergence）；HITL 在危险/网络动作前 `y/N`，`--accept <selector>` 达绿自动收尾。
 - **产物**：`src/harness/interactive/{presenter,chat,runner}.py` + cli `chat`/`task` 子命令 + `examples/demo/`（故意红样本，演示 `--accept` 自收尾）。
 
 ---

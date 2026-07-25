@@ -22,7 +22,12 @@ def test_init_then_status(capsys, tmp_path, monkeypatch):
 
 
 def _wire_fix_fake(monkeypatch, outcome, edits_diff=""):
-    """Patch AgentRunner→fake returning `outcome`; ZhipuLLMClient→no-op (no network)."""
+    """Patch AgentRunner→fake returning `outcome`; ZhipuLLMClient→sentinel (no network).
+
+    I2: `_cmd_fix` now decides proceed/abort via `_resolve_llm() is None`, so the
+    ZhipuLLMClient stub must return a non-None sentinel (previously None, which
+    would now misread as "no credentials" → rc 2). The fake runner ignores llm.
+    """
     class _FakeRunner:
         def __init__(self, *a, **kw):
             pass
@@ -31,7 +36,7 @@ def _wire_fix_fake(monkeypatch, outcome, edits_diff=""):
             return RunResult(outcome=outcome, edits_diff=edits_diff)
 
     monkeypatch.setattr("harness.agent.AgentRunner", _FakeRunner)
-    monkeypatch.setattr("harness.llm.zhipu.ZhipuLLMClient", lambda *a, **kw: None)
+    monkeypatch.setattr("harness.llm.zhipu.ZhipuLLMClient", lambda *a, **kw: ("fake-llm",))
 
 
 def test_fix_success_prints_outcome_and_diff_returns_0(capsys, tmp_path, monkeypatch):
@@ -71,3 +76,22 @@ def test_fix_no_credentials_returns_2(capsys, tmp_path, monkeypatch):
     assert rc == 2
     err = capsys.readouterr().err
     assert "no credentials" in err
+
+
+def test_resolve_llm_getpass_eof_falls_through_to_env(tmp_path, monkeypatch):
+    # I3: a creds file existing but no TTY / piped stdin (getpass raises
+    # EOFError) must NOT crash — it falls through to the ZHIPU_API_KEY env
+    # branch. Containers / CI hit this whenever a store exists but no master
+    # password is provided.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("HARNESS_MASTER_PASSWORD", raising=False)
+    cred_path = tmp_path / ".harness" / "credentials.enc"
+    cred_path.parent.mkdir(parents=True)
+    cred_path.write_bytes(b"x")  # store file exists → enter the getpass branch
+    monkeypatch.setattr("getpass.getpass", lambda *a, **k: (_ for _ in ()).throw(EOFError()))
+    monkeypatch.setenv("ZHIPU_API_KEY", "sk-env-fallback")
+    monkeypatch.setattr("harness.llm.zhipu.ZhipuLLMClient", lambda model, key: ("llm", model, key))
+
+    from harness.cli import _resolve_llm
+
+    assert _resolve_llm() == ("llm", "glm-4.6", "sk-env-fallback")

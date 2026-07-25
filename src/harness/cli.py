@@ -46,21 +46,14 @@ def _cmd_fix(args):
     cfg = load_config(args.config); cfg.project_root = args.repo
     mem = MemoryStore(os.path.join(args.repo, "HARNESS.md"), os.path.join(args.repo, ".harness", "run.jsonl"))
     cm = ContextManager(cfg, mem)
-    runner = AgentRunner(None, cfg, ToolDispatcher(cfg), Guardrail(cfg), HITL(FailClosedApprover()),
+    # I2: credential resolution is shared with the chat/task subcommands via
+    # _resolve_llm() (store-first, then ZHIPU_API_KEY env). No duplicated logic.
+    llm = _resolve_llm()
+    if llm is None:
+        print("no credentials (run `harness init` or set ZHIPU_API_KEY)", file=sys.stderr); return 2
+    runner = AgentRunner(llm, cfg, ToolDispatcher(cfg), Guardrail(cfg), HITL(FailClosedApprover()),
                          FeedbackEngine(cfg.test_timeout_s, cfg.stuck_repeat_n, cfg.stuck_no_progress_m,
                                         cfg.hint_history_lines), cm)
-    # wire real LLM only when key available
-    try:
-        master = os.environ.get("HARNESS_MASTER_PASSWORD") or getpass.getpass("Master password: ")
-        key = _store().get("zhipu", master)
-        from harness.llm.zhipu import ZhipuLLMClient
-        runner.llm = ZhipuLLMClient("glm-4.6", key)
-    except CredentialError:
-        env_key = os.environ.get("ZHIPU_API_KEY")
-        if not env_key:
-            print("no credentials (run `harness init` or set ZHIPU_API_KEY)", file=sys.stderr); return 2
-        from harness.llm.zhipu import ZhipuLLMClient
-        runner.llm = ZhipuLLMClient("glm-4.6", env_key)
     result = runner.run(Task(args.repo, args.test))
     print(f"OUTCOME: {result.outcome}")
     print(result.edits_diff)
@@ -80,8 +73,12 @@ def _resolve_llm():
         try:
             master = os.environ.get("HARNESS_MASTER_PASSWORD") or gp.getpass("Master password: ")
             return ZhipuLLMClient("glm-4.6", st.get("zhipu", master))
-        except CredentialError:
-            pass  # wrong master / corrupt store — fall through to env fallback
+        except (CredentialError, EOFError, OSError):
+            # CredentialError: wrong master / corrupt store → env fallback.
+            # EOFError/OSError: no TTY / piped stdin (CI, containers) → the
+            # getpass prompt cannot be satisfied; fall through to the env
+            # branch instead of crashing. (I3)
+            pass
     env_key = os.environ.get("ZHIPU_API_KEY")
     if env_key:
         return ZhipuLLMClient("glm-4.6", env_key)

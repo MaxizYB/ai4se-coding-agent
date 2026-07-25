@@ -32,11 +32,3 @@ def test_snapshot():
 def test_show_prose_empty_is_noop():
     out = io.StringIO(); Presenter(out=out).show_prose("")
     assert out.getvalue() == ""
-
-def test_ask_human_yes(monkeypatch):
-    monkeypatch.setattr("builtins.input", lambda _: "y")
-    assert Presenter(out=io.StringIO()).ask_human(ReadFile("x"), "reason") is True
-
-def test_ask_human_default_no(monkeypatch):
-    monkeypatch.setattr("builtins.input", lambda _: "")
-    assert Presenter(out=io.StringIO()).ask_human(ReadFile("x"), "reason") is False

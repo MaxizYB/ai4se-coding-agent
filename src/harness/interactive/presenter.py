@@ -30,10 +30,6 @@ class Presenter:
     def show_deny(self, reason: str) -> None:
         self._write(f"  denied: {reason}")
 
-    def ask_human(self, action, reason: str) -> bool:
-        ans = input(f"  APPROVE {type(action).__name__}? {reason} [y/N]: ")
-        return ans.strip().lower() == "y"
-
     def show_done(self, reason: str) -> None:
         self._write(f"  done: {reason}")
 

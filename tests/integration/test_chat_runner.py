@@ -4,7 +4,7 @@ from harness.config import Config
 from harness.context.manager import ContextManager
 from harness.feedback.engine import FeedbackEngine
 from harness.guardrails.guardrail import Guardrail
-from harness.guardrails.hitl import HITL, FailClosedApprover
+from harness.guardrails.hitl import HITL, FailClosedApprover, StubApprover
 from harness.interactive.chat import ChatRunner
 from harness.interactive.presenter import Presenter
 from harness.llm.mock import MockLLMClient
@@ -24,10 +24,10 @@ def _repo(tmp_path):
     )
 
 
-def _runner(tmp_path, script, lines):
+def _runner(tmp_path, script, lines, *, hitl=None, dangerous_patterns=None):
     cfg = Config.default()
     cfg.project_root = str(tmp_path)
-    cfg.dangerous_shell_patterns = [r"rm\s+-rf?"]
+    cfg.dangerous_shell_patterns = dangerous_patterns or [r"rm\s+-rf?"]
     cfg.network_commands = ["pip install"]
     mem = MemoryStore(str(tmp_path / "n"), str(tmp_path / "l"))
     cm = ContextManager(cfg, mem)
@@ -37,7 +37,7 @@ def _runner(tmp_path, script, lines):
         cfg,
         ToolDispatcher(cfg),
         Guardrail(cfg),
-        HITL(FailClosedApprover()),
+        hitl or HITL(FailClosedApprover()),
         FeedbackEngine(
             cfg.test_timeout_s, cfg.stuck_repeat_n, cfg.stuck_no_progress_m, cfg.hint_history_lines
         ),
@@ -91,3 +91,83 @@ def test_slash_clear_and_exit(tmp_path):
     r.run(str(tmp_path), accept=None)
     text = pres.out.getvalue()
     assert "cleared" in text and "bye" in text
+
+
+# --- C1: ChatRunner must route AskHuman through the injected HITL, never
+# through global input(). In task mode (FailClosedApprover) a dangerous
+# action must fail-closed WITHOUT prompting; in chat mode the injected
+# Approver decides. -----------------------------------------------------------
+
+DANGER = "ACTION: run_shell\nCOMMAND: rm -rf /\n"
+
+
+def test_task_mode_dangerous_action_failclosed(tmp_path, monkeypatch):
+    # If the loop ever falls back to global input() it raises (proving no
+    # prompt), and would hang/EOF in piped CI. FailClosedApprover must deny.
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("input called in non-interactive mode")
+        ),
+    )
+    _repo(tmp_path)
+    script = ["Removing.\n" + DANGER, "bye.\n" + FIN]
+    r, pres = _runner(tmp_path, script, iter([]), hitl=HITL(FailClosedApprover()))
+    rc = r.run_task(str(tmp_path), goal="clean up", accept=None)
+    text = pres.out.getvalue()
+    assert rc == 0                      # FINISH after deny; no hang, no prompt
+    assert "denied" in text             # dangerous action fail-closed
+    assert "rm -rf /" in text           # deny reason cites the command
+
+
+def _chat_stub_runner(tmp_path, approve, monkeypatch):
+    # A safe sentinel command that still trips a dangerous pattern so the
+    # guardrail returns AskHuman (exercising the HITL seam) without ever
+    # running a destructive shell.
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("real input called")),
+    )
+    _repo(tmp_path)
+    script = [
+        "Sentinel.\nACTION: run_shell\nCOMMAND: echo DANGER_TOKEN\n",
+        "bye.\n" + FIN,
+    ]
+    lines = iter(["do the thing", "/exit"])
+    r, pres = _runner(
+        tmp_path,
+        script,
+        lines,
+        hitl=HITL(StubApprover(approve)),
+        dangerous_patterns=[r"DANGER_TOKEN"],
+    )
+    r.run(str(tmp_path), accept=None)
+    return pres.out.getvalue()
+
+
+def test_chat_mode_dangerous_stub_approver_allows(tmp_path, monkeypatch):
+    text = _chat_stub_runner(tmp_path, True, monkeypatch)
+    assert "denied" not in text         # StubApprover(True) allowed the action
+    assert "RunShell" in text           # action was executed (shown by presenter)
+
+
+def test_chat_mode_dangerous_stub_approver_denies(tmp_path, monkeypatch):
+    text = _chat_stub_runner(tmp_path, False, monkeypatch)
+    assert "denied" in text             # StubApprover(False) denied the action
+    assert "RunShell" not in text       # action was NOT executed
+
+
+# --- I1: in run_task, --accept requires the accept test to go green; a
+# Finish without prior accept-green must return rc 1 + a clear message. -------
+
+def test_run_task_accept_not_verified_returns_1(tmp_path):
+    _repo(tmp_path)
+    script = ["done.\n" + FIN]          # Finish WITHOUT running the accept test
+    r, pres = _runner(tmp_path, script, iter([]))
+    rc = r.run_task(
+        str(tmp_path), goal="fix it", accept="tests/test_foo.py::test_add"
+    )
+    text = pres.out.getvalue()
+    assert rc == 1                      # accept never went green
+    assert "not verified" in text       # explicit message citing the selector
+    assert "tests/test_foo.py::test_add" in text

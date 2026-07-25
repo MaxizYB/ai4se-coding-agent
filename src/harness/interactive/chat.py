@@ -1,6 +1,6 @@
 from harness.actions.parser import ParseError, split_prose_and_action
 from harness.actions.protocol import Finish, RunTests
-from harness.guardrails.guardrail import Allow, AskHuman, Deny
+from harness.guardrails.guardrail import AskHuman, Deny
 from harness.interactive.presenter import Presenter
 from harness.types import Message
 
@@ -55,6 +55,13 @@ class ChatRunner:
         history: list[Message] = [Message("user", goal)]
         outcome = self._agent_loop(repo, accept, history)
         self.presenter.show_turn_end(outcome)
+        # I1: --accept demands proof. rc 0 requires the accept test to have
+        # gone green (outcome == "SUCCESS"); a self-certified Finish (or any
+        # non-green terminal state) is rejected. Without this the agent could
+        # return success via Finish without ever running the accept test.
+        if accept and outcome != "SUCCESS":
+            self.presenter.show_info(f"acceptance test not verified: {accept}")
+            return 1
         return 0 if outcome in ("SUCCESS", "FINISH") else 1
 
     def _agent_loop(self, repo: str, accept: str | None, history: list[Message]) -> str:
@@ -83,9 +90,12 @@ class ChatRunner:
                 continue  # pure narration; let the agent continue
             decision = self.guardrail.check(action)
             if isinstance(decision, AskHuman):
-                decision = (
-                    Allow() if self.presenter.ask_human(action, decision.reason) else Deny("human denied")
-                )
+                # C1: route through the injected HITL (fail-closed in task
+                # mode, ConsoleApprover/StubApprover in chat) — NEVER through
+                # global input(). Mirrors AgentRunner.run (agent.py:92-93).
+                # §3.5 fail-closed: in non-interactive task mode a dangerous /
+                # network action is denied rather than hanging on a prompt.
+                decision = self.hitl.request(action, decision.reason)
             if isinstance(decision, Deny):
                 self.presenter.show_deny(decision.reason)
                 history.append(Message("assistant", raw))
