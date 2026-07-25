@@ -1,0 +1,21 @@
+image: python:3.11-slim
+
+stages: [test, build]
+
+unit-test:
+  stage: test
+  script:
+    - pip install -e ".[dev]"
+    - make test
+  artifacts:
+    reports:
+      junit: .harness/junit.xml
+
+build-image:
+  stage: build
+  image: docker:24
+  services: [docker:24-dind]
+  script:
+    - docker build -t harness:latest .
+    - docker run --rm harness key status
+  only: [main]
