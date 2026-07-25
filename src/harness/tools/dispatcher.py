@@ -1,0 +1,82 @@
+import os
+import subprocess
+from dataclasses import dataclass
+
+from harness.actions.protocol import (
+    Action,
+    EditFile,
+    ListDir,
+    ReadFile,
+    RunShell,
+    RunTests,
+    WriteFile,
+)
+from harness.config import Config
+from harness.tools.runner import run_tests
+
+
+@dataclass
+class ToolResult:
+    ok: bool
+    stdout: str
+    stderr: str
+    exit_code: int
+    junit_xml: str = ""
+
+
+class ToolDispatcher:
+    def __init__(self, config: Config, test_runner=None):
+        self.config = config
+        self.test_runner = test_runner or run_tests
+
+    def _abs(self, path: str) -> str:
+        return os.path.join(self.config.project_root, path)
+
+    def execute(self, action: Action) -> ToolResult:
+        if isinstance(action, ReadFile):
+            try:
+                with open(self._abs(action.path)) as f:
+                    return ToolResult(True, f.read(), "", 0)
+            except OSError as e:
+                return ToolResult(False, "", str(e), 1)
+        if isinstance(action, ListDir):
+            try:
+                return ToolResult(True, "\n".join(os.listdir(self._abs(action.path))), "", 0)
+            except OSError as e:
+                return ToolResult(False, "", str(e), 1)
+        if isinstance(action, WriteFile):
+            os.makedirs(os.path.dirname(self._abs(action.path)) or ".", exist_ok=True)
+            with open(self._abs(action.path), "w") as f:
+                f.write(action.content)
+            return ToolResult(True, f"wrote {action.path}", "", 0)
+        if isinstance(action, EditFile):
+            p = self._abs(action.path)
+            with open(p) as f:
+                text = f.read()
+            if action.old not in text:
+                return ToolResult(False, "", "old block not found", 1)
+            with open(p, "w") as f:
+                f.write(text.replace(action.old, action.new, 1))
+            return ToolResult(True, f"edited {action.path}", "", 0)
+        if isinstance(action, RunShell):
+            r = subprocess.run(
+                action.command,
+                cwd=self.config.project_root,
+                shell=True,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            return ToolResult(r.returncode == 0, r.stdout, r.stderr, r.returncode)
+        if isinstance(action, RunTests):
+            junit = os.path.join(self.config.project_root, ".harness", "junit.xml")
+            os.makedirs(os.path.dirname(junit), exist_ok=True)
+            args = action.args.split() if action.args else []
+            out = self.test_runner(
+                ["pytest", "--junitxml", junit, "--tb=short", *args],
+                self.config.project_root,
+                self.config.test_timeout_s,
+                junit,
+            )
+            return ToolResult(out.exit_code == 0, out.stdout, out.stderr, out.exit_code, out.junit_xml)
+        return ToolResult(False, "", f"unknown action {type(action).__name__}", 1)
