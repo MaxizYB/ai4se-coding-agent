@@ -27,3 +27,14 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-ra -q"
 markers = ["live: tests calling a real LLM (deselect with -m 'not live')"]
+# I2: treat warnings as errors so latent bugs surface, but ignore third-party
+# deprecations we cannot fix upstream. NOTE: starlette's
+# StarletteDeprecationWarning is a UserWarning (NOT a DeprecationWarning
+# subclass) emitted from fastapi/testclient.py at import time, so it needs its
+# own line -- the broad `DeprecationWarning:starlette` filter would miss it.
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning:starlette.*",
+    "ignore::DeprecationWarning:fastapi.*",
+    "ignore::starlette.exceptions.StarletteDeprecationWarning",
+]

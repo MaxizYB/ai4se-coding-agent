@@ -1,8 +1,8 @@
 .PHONY: test lint demo install-dev install-full
 test:
-	pytest -m "not live"
+	mkdir -p .harness && pytest -m "not live" --junitxml=.harness/junit.xml
 lint:
-	ruff check src tests scripts
+	ruff check src tests scripts web
 demo:
 	python scripts/mechanism_demo.py
 install-dev:

@@ -77,4 +77,4 @@ def run(req: RunReq):
             )
         yield json.dumps({"outcome": result.outcome, "diff": result.edits_diff}) + "\n"
 
-    return StreamingResponse(stream(), media_type="text/event-stream")
+    return StreamingResponse(stream(), media_type="application/x-ndjson")

@@ -91,7 +91,12 @@ class AgentRunner:
             observation = None
             if isinstance(decision, AskHuman):
                 decision = self.hitl.request(action, decision.reason)
-            if isinstance(decision, Allow):
+            if isinstance(decision, Allow) and not isinstance(action, Finish):
+                # M3: Finish is a TERMINAL control action -- it must NOT be
+                # handed to ToolDispatcher (which has no Finish arm and would
+                # return the catch-all `unknown action Finish` ToolResult,
+                # polluting the turn summary + the §3.10 WebUI stream). Finish
+                # falls through to the termination check below.
                 result = self.dispatcher.execute(action)
                 summary = (result.stdout + result.stderr)[:200]
                 if isinstance(action, RunTests):
@@ -102,17 +107,16 @@ class AgentRunner:
                     if last_fb.stuck:
                         turns.append(Turn(raw, type(action).__name__, "Allow", summary))
                         return RunResult("STUCK", turns, self._diff(before), last_fb)
-                if not isinstance(action, Finish):
-                    # C2: feed the tool observation back into the next context so
-                    # the LLM can SEE read_file/list_dir/run_shell/run_tests
-                    # output. The old loop only stored this in Turn.summary
-                    # (display), so under a real LLM the agent was blind to its
-                    # own reads -- mock scripts were observation-independent and
-                    # masked it. Bounded to the last ~2000 chars for sane growth.
-                    # (Finish terminates and never reaches here; green/stuck
-                    # RunTests already returned above.)
-                    blob = (result.stdout or "") + (result.stderr or "")
-                    observation = blob[-2000:]
+                # C2: feed the tool observation back into the next context so
+                # the LLM can SEE read_file/list_dir/run_shell/run_tests
+                # output. The old loop only stored this in Turn.summary
+                # (display), so under a real LLM the agent was blind to its
+                # own reads -- mock scripts were observation-independent and
+                # masked it. Bounded to the last ~2000 chars for sane growth.
+                # (Finish never reaches here: it is excluded above; green/stuck
+                # RunTests already returned above.)
+                blob = (result.stdout or "") + (result.stderr or "")
+                observation = blob[-2000:]
             elif isinstance(decision, Deny):
                 summary = f"denied: {decision.reason}"
             turns.append(Turn(raw, type(action).__name__, type(decision).__name__, summary))

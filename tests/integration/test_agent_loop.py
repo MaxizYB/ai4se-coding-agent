@@ -184,3 +184,25 @@ def test_edits_diff_includes_newly_created_file(tmp_path):
     assert (tmp_path / "src" / "newmod.py").exists()
     assert "src/newmod.py" in r.edits_diff
     assert "def helper()" in r.edits_diff
+
+
+def test_finish_terminates_without_dispatching_to_tools(tmp_path):
+    # M3 regression: Finish must terminate the loop WITHOUT being handed to
+    # ToolDispatcher. The old code dispatched Finish (falling through every
+    # isinstance arm in dispatcher.execute) and got back the catch-all
+    # `unknown action Finish` ToolResult, which then surfaced in the turn
+    # summary AND polluted the SSE/WebUI stream with a spurious error. The
+    # fix reorders the loop so Finish short-circuits termination before the
+    # executor is ever called.
+    _repo(tmp_path, "return a - b")
+    # RT fails (no edit applied); Finish then terminates the loop. Without
+    # the fix, the Finish turn's summary is "unknown action Finish".
+    r = _runner(tmp_path, [RT, FIN]).run(
+        Task(str(tmp_path), "tests/test_foo.py::test_add")
+    )
+    finish_turns = [t for t in r.turns if t.action == "Finish"]
+    assert finish_turns, "a Finish action must record a turn"
+    assert "unknown action" not in finish_turns[0].summary, (
+        f"Finish was dispatched to ToolDispatcher (summary="
+        f"{finish_turns[0].summary!r}); it must terminate without dispatch"
+    )
