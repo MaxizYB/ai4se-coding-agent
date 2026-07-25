@@ -32,6 +32,18 @@ class RunResult:
 
 
 class AgentRunner:
+    # Outcomes (SPEC §3.5): SUCCESS / STUCK / BUDGET_EXHAUSTED / ERROR are
+    # emitted by run() below. HUMAN_ABORTED (SPEC §3.5: "HITL 否决到不可继续")
+    # is PENDING interactive-wiring -- it requires an abort signal from an
+    # interactive Approver (ConsoleApprover returning a third "abort" verdict,
+    # not just allow/deny). The current Approver contract returns bool
+    # (ask->allow/deny), so a non-interactive FailClosedApprover maps every
+    # AskHuman to Deny and the loop continues (BUDGET_EXHAUSTED/ERROR), never
+    # reaching a terminal abort. Full abort semantics are wired in T19 (CLI +
+    # ConsoleApprover abort signal). Do NOT silently leave this state absent:
+    # see PLAN.md "HUMAN_ABORTED wiring (T19)".
+    HUMAN_ABORTED = "HUMAN_ABORTED"  # mandated terminal state; see note above
+
     def __init__(self, llm, config, dispatcher, guardrail, hitl, feedback_engine, context_manager):
         self.llm = llm
         self.config = config
@@ -76,6 +88,7 @@ class AgentRunner:
                 continue
             decision = self.guardrail.check(action)
             summary = ""
+            observation = None
             if isinstance(decision, AskHuman):
                 decision = self.hitl.request(action, decision.reason)
             if isinstance(decision, Allow):
@@ -89,6 +102,17 @@ class AgentRunner:
                     if last_fb.stuck:
                         turns.append(Turn(raw, type(action).__name__, "Allow", summary))
                         return RunResult("STUCK", turns, self._diff(before), last_fb)
+                if not isinstance(action, Finish):
+                    # C2: feed the tool observation back into the next context so
+                    # the LLM can SEE read_file/list_dir/run_shell/run_tests
+                    # output. The old loop only stored this in Turn.summary
+                    # (display), so under a real LLM the agent was blind to its
+                    # own reads -- mock scripts were observation-independent and
+                    # masked it. Bounded to the last ~2000 chars for sane growth.
+                    # (Finish terminates and never reaches here; green/stuck
+                    # RunTests already returned above.)
+                    blob = (result.stdout or "") + (result.stderr or "")
+                    observation = blob[-2000:]
             elif isinstance(decision, Deny):
                 summary = f"denied: {decision.reason}"
             turns.append(Turn(raw, type(action).__name__, type(decision).__name__, summary))
@@ -96,7 +120,10 @@ class AgentRunner:
                 return self._finish(
                     "SUCCESS" if (last_fb and last_fb.is_green) else "ERROR", turns, before
                 )
-            ctx = self.context_manager.build(ctx + [Message("assistant", raw)], last_fb)
+            history = ctx + [Message("assistant", raw)]
+            if observation is not None:
+                history.append(Message("user", "OBSERVATION:\n" + observation))
+            ctx = self.context_manager.build(history, last_fb)
         return RunResult("BUDGET_EXHAUSTED", turns, self._diff(before), last_fb)
 
     def _finish(self, outcome, turns, before):
@@ -104,8 +131,28 @@ class AgentRunner:
 
     def _diff(self, before):
         out = []
+        seen = set()
         for rel, old in before.items():
+            seen.add(rel)
             new = self._snapshot(rel)
             if old != new:
                 out.extend(difflib.unified_diff(old, new, fromfile=rel, tofile=rel))
+        # I4: walk allowed_write_dirs again and emit an "added file" entry for
+        # any path created during the run that was NOT in `before`. The old
+        # walk iterated only `before.keys()`, so WriteFile of a NEW file
+        # produced an empty diff -- breaking US4 observability + §3.10 WebUI.
+        for d in self.config.allowed_write_dirs:
+            root = os.path.join(self.config.project_root, d)
+            if not os.path.isdir(root):
+                continue
+            for dp, _, fs in os.walk(root):
+                for f in fs:
+                    rel = os.path.relpath(os.path.join(dp, f), self.config.project_root)
+                    if rel in seen:
+                        continue
+                    seen.add(rel)
+                    new = self._snapshot(rel)
+                    # Empty `before` for a new file -> diff against nothing,
+                    # emitting the whole file as additions (fromfile=/dev/null).
+                    out.extend(difflib.unified_diff([], new, fromfile="/dev/null", tofile=rel))
         return "".join(out)

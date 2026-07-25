@@ -1909,6 +1909,8 @@ git commit -m "feat(llm): LLMClient protocol + MockLLMClient (offline test seam)
 - Consumes: everything above (`LLMClient`, `Config`, `ToolDispatcher`, `Guardrail`, `HITL`, `FeedbackEngine`, `ContextManager`, `parse_action`, `ParseError`, action types).
 - Produces: `@dataclass Task{repo_path:str; test_selector:str}`; `@dataclass Turn{raw:str; action:str; decision:str; summary:str}`; `@dataclass RunResult{outcome:str; turns:list; edits_diff:str; failure_report}`; `AgentRunner(llm, config, dispatcher, guardrail, hitl, feedback_engine, context_manager)` with `.run(task) -> RunResult`. Outcomes ∈ {SUCCESS, STUCK, BUDGET_EXHAUSTED, HUMAN_ABORTED, ERROR}.
 
+> **HUMAN_ABORTED wiring (T19) — final-review I1.** `HUMAN_ABORTED` is a SPEC §3.5-mandated terminal state ("HITL 否决到不可继续") that the current loop never emits: the `Approver` protocol returns `bool` (`ask -> allow/deny`), so a non-interactive `FailClosedApprover` maps every `AskHuman` to `Deny` and the loop continues to `BUDGET_EXHAUSTED`/`ERROR` instead of a terminal abort. `AgentRunner.HUMAN_ABORTED` is declared as a named constant and clearly marked PENDING interactive-wiring in `src/harness/agent.py`. Full abort semantics (a third `abort` verdict from `ConsoleApprover`, propagated through `HITL.request` to a terminal `RunResult`) are implemented in **T19** alongside the CLI/`ConsoleApprover` interactive path. This is deliberately deferred: there is no interactive Approver in the default non-interactive configuration, so wiring it now would be dead code with no test seam.
+
 - [ ] **Step 1: Write the failing test (mock-LLM, real pytest on a tmp fixture)**
 
 ```python
