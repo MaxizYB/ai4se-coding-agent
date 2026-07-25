@@ -1,6 +1,8 @@
 from pathlib import Path
 
+from harness.feedback.classifier import classify_run
 from harness.feedback.pytest_parser import parse_pytest_output
+from harness.feedback.types import FailureCategory
 
 FIX = Path(__file__).parent.parent / "fixtures"
 
@@ -41,3 +43,46 @@ def test_wrapped_testsuites_format():
     r = parse_pytest_output(1, "", "", _xml("wrapped_assertion.xml"))
     assert not r.is_green and r.failed == 1 and r.total == 1
     assert r.failures[0].nodeid == "tests.test_foo.test_add"
+    # I3: guard the classification path against real pytest output (xunit2),
+    # not just totals. After C1 this classifies LOGIC, not UNKNOWN.
+    assert r.failures[0].exc_type == "AssertionError"
+    assert classify_run(r) is FailureCategory.LOGIC
+
+
+def test_real_failure_without_type_attr_infers_assertion_logic():
+    # C1 regression: real pytest's `<failure>` carries only `message=` (NO
+    # `type=`). Hand-crafted fixtures used `type="AssertionError"` and masked
+    # the fact that real assertion failures classified as UnknownError -> UNKNOWN,
+    # collapsing the deep-dim taxonomy on the most common case. The fix infers
+    # exc_type from the message/text. This uses the REAL captured fixture
+    # (Bug-A) whose `<failure>` has no `type=` attribute.
+    r = parse_pytest_output(1, "", "", _xml("wrapped_assertion.xml"))
+    assert r.failures[0].exc_type == "AssertionError"  # inferred, not "UnknownError"
+    assert classify_run(r) is FailureCategory.LOGIC
+
+
+def test_inferred_exc_uses_last_regex_match_for_chained_exceptions():
+    # C1 step 1: when `type=` is absent, apply _EXC_RE and take the LAST match
+    # (consistent with the stderr-fallback path) so an explicit exception like
+    # subprocess.TimeoutExpired wins over a generic prefix.
+    xml = (
+        '<testsuite tests="1" failures="1" errors="0">'
+        '<testcase classname="t" name="test_x">'
+        '<failure message="boom">'
+        "ValueError: bad\nsubprocess.TimeoutExpired: cmd 30s"
+        "</failure></testcase></testsuite>"
+    )
+    r = parse_pytest_output(1, "", "", xml)
+    assert r.failures[0].exc_type == "subprocess.TimeoutExpired"
+
+
+def test_inferred_exc_unknown_when_message_has_no_exception():
+    # C1 step 3: nothing to infer -> UnknownError (still classified, not a crash).
+    xml = (
+        '<testsuite tests="1" failures="1" errors="0">'
+        '<testcase classname="t" name="test_x">'
+        "<failure message='just a message'>no exc here</failure>"
+        "</testcase></testsuite>"
+    )
+    r = parse_pytest_output(1, "", "", xml)
+    assert r.failures[0].exc_type == "UnknownError"

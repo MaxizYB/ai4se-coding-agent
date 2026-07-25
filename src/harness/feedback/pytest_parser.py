@@ -45,6 +45,31 @@ def parse_pytest_output(exit_code: int, stdout: str, stderr: str, junit_xml: str
         for tag in ("failure", "error"):
             el = tc.find(tag)
             if el is not None:
-                failures.append(TestFailure(nodeid, el.get("type", "UnknownError"),
+                failures.append(TestFailure(nodeid, _infer_exc_type(el),
                                             el.get("message", ""), el.text or ""))
     return TestRunResult(total, max(passed, 0), failed, errors, failures, exit_code)
+
+
+def _infer_exc_type(el) -> str:
+    """C1: real pytest's `<failure>` carries only `message=` (no `type=`), so
+    naive `el.get("type", "UnknownError")` made real assertion failures
+    classify as UnknownError -> UNKNOWN, collapsing the deep-dim taxonomy on
+    the most common case. Prefer an explicit `type=` when present; otherwise
+    INFER the exception type from message+text so classification still works.
+    """
+    explicit = (el.get("type") or "").strip()
+    if explicit:
+        return explicit
+    blob = (el.get("message", "") or "") + "\n" + (el.text or "")
+    # Step 1: take the LAST regex match (consistent with the stderr-fallback
+    # path) so an explicit raised exception wins over a generic prefix.
+    matches = _EXC_RE.findall(blob)
+    if matches:
+        return matches[-1]
+    # Step 2: bare assertion -- pytest's `assert ...` / `E   assert ...` lines.
+    for line in blob.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith(("assert ", "E   assert")):
+            return "AssertionError"
+    # Step 3: nothing inferable.
+    return "UnknownError"
