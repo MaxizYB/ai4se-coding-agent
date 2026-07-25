@@ -99,47 +99,69 @@ def test_dangerous_action_denied_by_fail_closed(tmp_path):
 
 
 def test_tool_observation_fed_back_to_llm(tmp_path):
-    # C2 regression: tool observations (read_file/list_dir/run_shell) must be
-    # fed back into the LLM's next context. The old loop only stored
-    # result.stdout/stderr in Turn.summary (display); the next context was
-    # built from `ctx + [assistant raw] + last_fb` (only set for RunTests), so
-    # a read_file result never reached the LLM. Mock scripts were
+    # C2 regression: tool observations (read_file/list_dir/run_shell/run_tests)
+    # must be fed back into the LLM's next context as a DISTINCT user message.
+    # The old loop stored result.stdout/stderr only in Turn.summary (display);
+    # the next context was ctx + [assistant raw] + last_fb (only set for
+    # RunTests), so a read_file result never reached the LLM. Mock scripts were
     # observation-independent so passed; under a real LLM the agent is blind.
-    # This callable-mock inspects its incoming messages and asserts the
-    # read_file content appears in a `user` message BEFORE emitting edit_file.
+    #
+    # This test targets the OBSERVATION-FEEDBACK path SPECIFICALLY -- not the
+    # ContextManager.build_initial injection (which pre-loads the located impl
+    # module). The previous version of this test read src/foo.py and checked
+    # `marker in user_msgs`; that was tautological/fragile: build_initial
+    # injects foo.py's body into the initial prompt, so the marker was already
+    # present on iteration 1 regardless of the C2 fix (a latent test_selector
+    # path-resolution bug currently masks this, but the test must not depend on
+    # that bug). Two independent safeguards make this assertion bulletproof:
+    #   (1) Option A -- assert a user message that BOTH starts with the
+    #       observation prefix ("OBSERVATION:") AND carries the marker. The
+    #       initial prompt and FEEDBACK messages do NOT start with that prefix.
+    #   (2) Option B -- read a SEPARATE helper file that build_initial never
+    #       injects (it is not the impl module located from the test imports),
+    #       so the marker can ONLY reach the LLM via the read_file observation.
     _repo(tmp_path, "return a - b")
-    marker = "MARKER_OBS_LINE_return_a_minus_b"
-    (tmp_path / "src" / "foo.py").write_text(
-        f"def add(a, b):\n    return a - b  # {marker}\n"
+    # Unique marker absent from src/foo.py, the test file, and any
+    # build_initial-injected path. Helper is not imported by the test, so
+    # locate_impl_module never resolves it -> never pre-injected.
+    marker = "UNIQUE_OBS_TOKEN_7c3f9a_read_helper_body"
+    (tmp_path / "src" / "helper.py").write_text(
+        f"# project scratch\nHINT = {marker!r}\n"
     )
-    READ = "ACTION: read_file\nPATH: src/foo.py\n"
+    READ_HELPER = "ACTION: read_file\nPATH: src/helper.py\n"
     EDIT_FROM_OBS = (
-        f"ACTION: edit_file\nPATH: src/foo.py\n"
-        f"<<<OLD\n    return a - b  # {marker}\n>>>OLD\n"
-        f"<<<NEW\n    return a + b\n>>>NEW\n"
+        "ACTION: edit_file\nPATH: src/foo.py\n"
+        "<<<OLD\n    return a - b\n>>>OLD\n"
+        "<<<NEW\n    return a + b\n>>>NEW\n"
     )
 
-    state = {"saw_observation": False}
+    state = {"saw_observation_msg": False}
 
     def script(messages):
-        # Decide which action to emit based on how far we've progressed.
-        user_msgs = [m.content for m in messages if m.role == "user"]
-        # The observation message (a user-role message carrying tool output)
-        # must appear before we commit to the edit. If C2 is missing, the only
-        # user content is the initial prompt + feedback -- never the file body.
-        if any(marker in c for c in user_msgs):
-            state["saw_observation"] = True
+        # Detect the C2 observation message: a user-role message that BOTH
+        # starts with the observation prefix AND carries the unique marker.
+        # Without the C2 append, no message ever starts with "OBSERVATION:".
+        for m in messages:
+            if m.role == "user" and m.content.startswith("OBSERVATION:") and marker in m.content:
+                state["saw_observation_msg"] = True
+                break
+        # Phase 1: read the helper file (no observation seen yet).
+        if not state["saw_observation_msg"]:
+            return READ_HELPER
+        # Phase 2: once the observation reached us, emit the fix edit (once).
+        assistant = [m.content for m in messages if m.role == "assistant"]
+        if not any("edit_file" in c for c in assistant):
             return EDIT_FROM_OBS
-        if not any("edit_file" in c for c in [m.content for m in messages if m.role == "assistant"]):
-            return READ
+        # Phase 3: verify green.
         return RT
 
     r = _runner(tmp_path, script, max_iterations=12).run(
         Task(str(tmp_path), "tests/test_foo.py::test_add")
     )
-    # The marker only appears in the read_file OBSERVATION (not the initial
-    # prompt, not feedback). If it was observed, observation feedback works.
-    assert state["saw_observation"], "read_file output never reached the LLM context"
+    assert state["saw_observation_msg"], (
+        "no user message starting with 'OBSERVATION:' and carrying the read_file "
+        "marker reached the LLM -- tool observation was not fed back (C2 broken)"
+    )
     assert r.outcome == "SUCCESS"
     assert "return a + b" in (tmp_path / "src" / "foo.py").read_text()
 
