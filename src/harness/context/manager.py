@@ -1,16 +1,11 @@
 import ast
 import os
-from dataclasses import dataclass
 
 from harness.config import Config
 from harness.memory.store import MemoryStore
+from harness.types import Message
 
-
-@dataclass
-class Message:
-    role: str
-    content: str
-
+__all__ = ["ContextManager", "Message", "locate_impl_module"]
 
 _SYSTEM = """You are a TDD red-green fix agent. Make the failing test pass by editing source under the allowed scope.
 Emit EXACTLY ONE action per turn using this protocol:
