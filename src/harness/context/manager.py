@@ -17,6 +17,17 @@ KEY: VALUE            # PATH: src/foo.py  /  ARGS: tests/t.py::test_x  /  COMMAN
 >>>TAG
 Rules: prefer edit_file over write_file; run run_tests to verify; emit finish when green. One action per turn."""
 
+_CHAT_SYSTEM = """You are a coding agent working in the repository at {repo}.
+Accomplish the user's task. Each turn: say in ONE short line what you are doing, THEN emit exactly one action using this protocol:
+
+ACTION: <read_file|list_dir|write_file|edit_file|run_shell|run_tests|finish>
+KEY: VALUE            # PATH: ... / ARGS: ... / COMMAND: ... / REASON: ...
+<<<TAG                 # content block (write_file: <<< ... >>> ; edit_file: <<<OLD ... >>>OLD + <<<NEW ... >>>NEW)
+<literal content>
+>>>TAG
+
+Read files freely to explore. After editing, run run_tests to verify. Emit finish when the task is complete. Emit exactly one action per turn.{accept}"""
+
 
 def locate_impl_module(test_path: str) -> str | None:
     """Static import trace: parse `test_path`, find the first `from <pkg> import ...`
@@ -96,4 +107,14 @@ class ContextManager:
                     + last_feedback.traceback_excerpt,
                 )
             )
+        return msgs
+
+    def build_chat(self, repo: str, accept: str | None, history: list[Message]) -> list[Message]:
+        accept_line = f"\nAcceptance: the test '{accept}' passing (green) means success." if accept else ""
+        system = Message("system", _CHAT_SYSTEM.format(repo=repo, accept=accept_line))
+        msgs = [system]
+        notes = self.memory.load_notes()
+        if notes:
+            msgs.append(Message("system", "Project notes:\n" + notes))
+        msgs += history[-self.config.max_history:]
         return msgs
