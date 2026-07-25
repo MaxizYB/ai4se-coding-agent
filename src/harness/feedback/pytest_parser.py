@@ -29,10 +29,18 @@ def parse_pytest_output(exit_code: int, stdout: str, stderr: str, junit_xml: str
         exc = matches[-1] if matches else "UnknownError"
         msg = stderr.strip().splitlines()[-1] if stderr.strip() else ""
         return TestRunResult(0, 0, 0, 1, [TestFailure("<collection>", exc, msg)], exit_code)
-    total = int(root.get("tests", 0)); failed = int(root.get("failures", 0))
-    errors = int(root.get("errors", 0)); passed = total - failed - errors
+    # Aggregate over every `<testsuite>` regardless of wrapping. pytest's
+    # junit_family=xunit2 (the default) emits a `<testsuites>` root whose
+    # `tests`/`failures`/`errors` live on the inner `<testsuite>`(s); xunit1
+    # emits a bare `<testsuite>` root. `iter` matches the root itself when it is
+    # a `<testsuite>`, so both shapes (and multi-suite output) are handled.
+    suites = list(root.iter("testsuite"))
+    total = sum(int(s.get("tests", 0)) for s in suites)
+    failed = sum(int(s.get("failures", 0)) for s in suites)
+    errors = sum(int(s.get("errors", 0)) for s in suites)
+    passed = total - failed - errors
     failures = []
-    for tc in root.findall("testcase"):
+    for tc in root.iter("testcase"):
         nodeid = _nodeid(tc.get("classname", ""), tc.get("name", ""))
         for tag in ("failure", "error"):
             el = tc.find(tag)

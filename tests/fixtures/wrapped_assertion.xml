@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.012" timestamp="2026-07-25T11:22:01.822727+08:00" hostname="archlinux"><testcase classname="tests.test_foo" name="test_add" time="0.000"><failure message="assert 0 == 4&#10; +  where 0 = add(2, 2)">tests/test_foo.py:4: in test_add
+    assert add(2,2) == 4
+E   assert 0 == 4
+E    +  where 0 = add(2, 2)</failure></testcase></testsuite></testsuites>

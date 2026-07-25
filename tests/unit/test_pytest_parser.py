@@ -32,3 +32,12 @@ def test_malformed_xml_falls_back_to_stderr():
     r = parse_pytest_output(2, "", "RuntimeError: boom", "<testsuite><testcase")
     assert not r.is_green and r.errors == 1
     assert r.failures[0].exc_type == "RuntimeError"  # synthesized from stderr
+
+def test_wrapped_testsuites_format():
+    # Real pytest (xunit2 / junit_family=default) wraps `<testsuite>` inside a
+    # `<testsuites>` root. The parser MUST read totals/testcases from the inner
+    # suite(s), not the wrapper (which carries no tests/failures attrs). Caught
+    # by Task 17's real-pytest integration -- the unwrapped fixtures above hid it.
+    r = parse_pytest_output(1, "", "", _xml("wrapped_assertion.xml"))
+    assert not r.is_green and r.failed == 1 and r.total == 1
+    assert r.failures[0].nodeid == "tests.test_foo.test_add"
