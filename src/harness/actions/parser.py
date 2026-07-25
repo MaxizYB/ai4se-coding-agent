@@ -18,7 +18,10 @@ class ParseError(Exception):
         self.reason = reason
 
 
-_BLOCK = re.compile(r"<<<(?P<tag>[A-Z]*)\n(?P<body>.*?)>>>(?P=tag)\n", re.DOTALL)
+# I5: trailing `\n?` (not required `\n`) so a final block at EOF with NO
+# trailing newline still matches. Real LLMs frequently omit it; mock scripts
+# always ended `\n` so the bug was masked.
+_BLOCK = re.compile(r"<<<(?P<tag>[A-Z]*)\n(?P<body>.*?)>>>(?P=tag)\n?", re.DOTALL)
 _ACTION_RE = re.compile(r"ACTION:\s*(?P<name>\w+)\b")
 
 _SIMPLE = {

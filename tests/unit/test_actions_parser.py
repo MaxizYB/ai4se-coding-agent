@@ -55,3 +55,21 @@ def test_parse_error_on_missing_path_write_file():
     with pytest.raises(ParseError) as ei:
         parse_action("ACTION: write_file\n<<<\nx\n>>>\n")
     assert ei.value.reason
+
+
+def test_write_file_block_at_eof_without_trailing_newline():
+    # I5: real LLMs often emit the final block at EOF with NO trailing newline
+    # after `>>>TAG`. The old `_BLOCK` regex required `\n` there, so the block
+    # never matched -> false ParseError. Mock scripts always ended `\n` so the
+    # bug was masked; live GLM will omit it. Make the trailing newline optional.
+    raw = "ACTION: write_file\nPATH: a.py\n<<<\ndef f():\n    return 1\n>>>"  # no \n
+    assert parse_action(raw) == WriteFile("a.py", "def f():\n    return 1\n")
+
+
+def test_edit_file_blocks_at_eof_without_trailing_newline():
+    # I5: same for edit_file's final `>>>NEW` at EOF.
+    raw = (
+        "ACTION: edit_file\nPATH: a.py\n<<<OLD\n    return 1\n>>>OLD\n"
+        "<<<NEW\n    return 2\n>>>NEW"  # no trailing \n
+    )
+    assert parse_action(raw) == EditFile("a.py", "    return 1\n", "    return 2\n")

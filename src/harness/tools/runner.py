@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 @dataclass
 class TestRunOutput:
+    __test__ = False  # silence pytest collection warning (F9)
     exit_code: int
     stdout: str
     stderr: str
