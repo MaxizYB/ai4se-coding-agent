@@ -74,6 +74,18 @@ make test     # pytest -m "not live"  (offline; the live GLM test is deselected)
 make lint     # ruff check src tests scripts web
 ```
 
+### Conversational REPL (Claude/Codex-style)
+```bash
+export ZHIPU_API_KEY="<your GLM key>"
+harness chat --repo /path/to/project            # multi-turn; type tasks, /help for commands
+harness chat --repo /path/to/project --accept tests/test_foo.py::test_add   # stop when green
+harness task --repo /path/to/project --goal "add a login function"          # one-shot, non-interactive
+```
+The agent narrates each step, reads/edits files, runs tests to self-check (failure class + hint shown inline), and asks `y/N` before dangerous/network actions. Try it on the bundled sample:
+```bash
+harness chat --repo examples/demo --accept tests/test_foo.py::test_add
+```
+
 ---
 
 ## Distribution
