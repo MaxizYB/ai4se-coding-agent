@@ -75,3 +75,16 @@ def parse_action(text: str) -> Action:
         return builder(params)
     except KeyError as e:
         raise ParseError(f"missing parameter {e} for {name}") from e
+
+
+def split_prose_and_action(text: str) -> tuple[str, "Action | None"]:
+    """Split LLM output into (prose before ACTION:, parsed action).
+
+    No ACTION: line -> (text.strip(), None) — a pure-narration turn.
+    ACTION: present -> prose is the text before it; action = parse_action(text)
+    (which may raise ParseError for malformed actions — the caller handles it).
+    """
+    m = _ACTION_RE.search(text)
+    if m is None:
+        return text.strip(), None
+    return text[: m.start()].strip(), parse_action(text)
