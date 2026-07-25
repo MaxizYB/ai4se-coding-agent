@@ -50,6 +50,13 @@ class ChatRunner:
                 # task satisfied; clear the completed turn's tool history, keep chatting
                 history = [m for m in history if m.role == "user"][-1:]
 
+    def run_task(self, repo: str, goal: str, accept: str | None = None) -> int:
+        self.presenter.welcome(repo, accept)
+        history: list[Message] = [Message("user", goal)]
+        outcome = self._agent_loop(repo, accept, history)
+        self.presenter.show_turn_end(outcome)
+        return 0 if outcome in ("SUCCESS", "FINISH") else 1
+
     def _agent_loop(self, repo: str, accept: str | None, history: list[Message]) -> str:
         parse_failures = 0
         for _ in range(self.config.max_iterations):
