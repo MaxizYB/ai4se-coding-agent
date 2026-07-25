@@ -13,9 +13,8 @@ def _store():
     return CredentialStore(path)
 
 def _cmd_init(args):
-    import getpass as gp
-    master = gp.getpass("Choose master password: ")
-    key = input("Paste your ZHIPU API key: ").strip()
+    master = getpass.getpass("Choose master password: ")
+    key = getpass.getpass("ZHIPU API key: ").strip()
     _store().set("zhipu", key, master)
     print("credentials stored (encrypted).")
     return 0
@@ -30,7 +29,7 @@ def _cmd_key(args):
         return 0
     if args.sub == "set":
         master = getpass.getpass("Master password: ")
-        key = input("New ZHIPU API key: ").strip()
+        key = getpass.getpass("New ZHIPU API key: ").strip()
         st.set("zhipu", key, master); print("updated."); return 0
     if args.sub == "clear":
         st.clear(); print("cleared."); return 0
