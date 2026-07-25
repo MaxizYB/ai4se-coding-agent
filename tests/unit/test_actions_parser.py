@@ -49,3 +49,9 @@ def test_parse_error_on_missing_action():
 def test_parse_error_on_unterminated_block():
     with pytest.raises(ParseError):
         parse_action("ACTION: write_file\nPATH: a.py\n<<<\nnever closed")
+
+
+def test_parse_error_on_missing_path_write_file():
+    with pytest.raises(ParseError) as ei:
+        parse_action("ACTION: write_file\n<<<\nx\n>>>\n")
+    assert ei.value.reason

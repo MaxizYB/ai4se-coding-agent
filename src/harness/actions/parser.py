@@ -52,13 +52,19 @@ def parse_action(text: str) -> Action:
         body = blocks.get("DEFAULT")
         if body is None:
             raise ParseError("write_file requires a content block")
-        return WriteFile(params["PATH"], body)
+        try:
+            return WriteFile(params["PATH"], body)
+        except KeyError as e:
+            raise ParseError(f"missing parameter {e} for {name}") from e
     if name == "edit_file":
         old = blocks.get("OLD")
         new = blocks.get("NEW")
         if old is None or new is None:
             raise ParseError("edit_file requires <<<OLD and <<<NEW blocks")
-        return EditFile(params["PATH"], old, new)
+        try:
+            return EditFile(params["PATH"], old, new)
+        except KeyError as e:
+            raise ParseError(f"missing parameter {e} for {name}") from e
     builder = _SIMPLE.get(name)
     if builder is None:
         raise ParseError(f"unknown action: {name}")
