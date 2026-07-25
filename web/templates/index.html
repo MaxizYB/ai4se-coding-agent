@@ -1,0 +1,21 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Harness Demo</title></head>
+<body>
+  <h1>Coding Agent Harness — TDD Red-Green Fixer</h1>
+  <form id="f">
+    <label>Failing test selector: <input name="test" value="tests/test_foo.py::test_add"></label>
+    <button>Run</button>
+  </form>
+  <pre id="out"></pre>
+  <script>
+    document.getElementById('f').onsubmit = async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const res = await fetch('/run', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({test: fd.get('test')})});
+      const reader = res.body.getReader(); const dec = new TextDecoder();
+      const out = document.getElementById('out');
+      while (true) { const {value, done} = await reader.read(); if (done) break; out.textContent += dec.decode(value); }
+    };
+  </script>
+</body></html>
