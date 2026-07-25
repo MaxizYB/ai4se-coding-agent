@@ -2,7 +2,7 @@
 test:
 	pytest -m "not live"
 lint:
-	ruff check src tests
+	ruff check src tests scripts
 demo:
 	python scripts/mechanism_demo.py
 install-dev:

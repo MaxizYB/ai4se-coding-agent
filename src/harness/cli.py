@@ -33,6 +33,7 @@ def _cmd_key(args):
         st.set("zhipu", key, master); print("updated."); return 0
     if args.sub == "clear":
         st.clear(); print("cleared."); return 0
+    return 1  # unreachable: argparse `choices` rejects unknown subcommands
 
 def _cmd_fix(args):
     from harness.agent import AgentRunner, Task

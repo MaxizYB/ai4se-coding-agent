@@ -42,7 +42,9 @@ def demo2_feedback_changes_action():
     eng = FeedbackEngine(30, 99, 99, 8)
     fb = eng.classify(TR(1, ASSERT_XML))
     print("② feedback hint (drives next edit):", fb.hint.strip())
-    assert "断言" in fb.hint  # the strategy tells the agent to fix logic, not touch deps
+    # "修实现逻辑" uniquely identifies the LOGIC branch; "断言" alone is
+    # non-discriminating because the ENV hint also contains it ("不要改断言逻辑").
+    assert "修实现逻辑" in fb.hint
 
 
 def demo3_categories_differ():
@@ -56,6 +58,9 @@ def demo3_categories_differ():
         FailureCategory.ENV,
         FailureCategory.TIMEOUT,
     }
+    # Lock hint-distinctness: a strategy_hint regression collapsing every category
+    # to one template (but keeping the right category labels) must fail here.
+    assert len({logic.hint, env.hint, timeout.hint}) == 3
 
 
 def main():
