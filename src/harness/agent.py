@@ -6,6 +6,7 @@ from harness.actions.parser import ParseError, parse_action
 from harness.actions.protocol import Finish, RunTests
 from harness.feedback.types import FailureReport
 from harness.guardrails.guardrail import Allow, AskHuman, Deny
+from harness.guardrails.sandbox import Containerize
 from harness.types import Message
 
 
@@ -44,7 +45,7 @@ class AgentRunner:
     # see PLAN.md "HUMAN_ABORTED wiring (T19)".
     HUMAN_ABORTED = "HUMAN_ABORTED"  # mandated terminal state; see note above
 
-    def __init__(self, llm, config, dispatcher, guardrail, hitl, feedback_engine, context_manager):
+    def __init__(self, llm, config, dispatcher, guardrail, hitl, feedback_engine, context_manager, sandbox=None):
         self.llm = llm
         self.config = config
         self.dispatcher = dispatcher
@@ -52,6 +53,7 @@ class AgentRunner:
         self.hitl = hitl
         self.feedback_engine = feedback_engine
         self.context_manager = context_manager
+        self.sandbox = sandbox
 
     def _snapshot(self, path):
         p = os.path.join(self.config.project_root, path)
@@ -91,6 +93,19 @@ class AgentRunner:
             observation = None
             if isinstance(decision, AskHuman):
                 decision = self.hitl.request(action, decision.reason)
+            # G2: Sandbox — HARD execution-boundary gate. Runs ONLY after the
+            # soft guardrail (+HITL) allowed; a Deny here is recorded as a Deny
+            # turn below (same as a guardrail Deny) and the action never reaches
+            # the dispatcher. Guardrail Deny wins; sandbox is not consulted.
+            if self.sandbox is not None and isinstance(decision, Allow):
+                sbox = self.sandbox.check(action)
+                if isinstance(sbox, Deny):
+                    decision = sbox
+                elif isinstance(sbox, AskHuman):
+                    decision = self.hitl.request(action, sbox.reason)
+                elif isinstance(sbox, Containerize):
+                    pass  # G5: route to SandboxDockerExecutor instead of the host dispatcher.
+                # Allow: fall through unchanged -> proceed to dispatch.
             if isinstance(decision, Allow) and not isinstance(action, Finish):
                 # M3: Finish is a TERMINAL control action -- it must NOT be
                 # handed to ToolDispatcher (which has no Finish arm and would

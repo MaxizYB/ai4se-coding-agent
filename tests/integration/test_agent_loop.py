@@ -4,6 +4,7 @@ from harness.context.manager import ContextManager
 from harness.feedback.engine import FeedbackEngine
 from harness.guardrails.guardrail import Guardrail
 from harness.guardrails.hitl import HITL, FailClosedApprover
+from harness.guardrails.sandbox import Sandbox
 from harness.llm.mock import MockLLMClient
 from harness.memory.store import MemoryStore
 from harness.tools.dispatcher import ToolDispatcher
@@ -48,6 +49,7 @@ def _runner(tmp_path, script, **overrides):
             cfg.hint_history_lines,
         ),
         cm,
+        sandbox=Sandbox(cfg),
     )
 
 

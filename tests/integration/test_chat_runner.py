@@ -5,6 +5,7 @@ from harness.context.manager import ContextManager
 from harness.feedback.engine import FeedbackEngine
 from harness.guardrails.guardrail import Guardrail
 from harness.guardrails.hitl import HITL, FailClosedApprover, StubApprover
+from harness.guardrails.sandbox import Sandbox
 from harness.interactive.chat import ChatRunner
 from harness.interactive.presenter import Presenter
 from harness.llm.mock import MockLLMClient
@@ -24,11 +25,17 @@ def _repo(tmp_path):
     )
 
 
-def _runner(tmp_path, script, lines, *, hitl=None, dangerous_patterns=None):
+def _runner(tmp_path, script, lines, *, hitl=None, dangerous_patterns=None, sandbox=None, **overrides):
     cfg = Config.default()
     cfg.project_root = str(tmp_path)
-    cfg.dangerous_shell_patterns = dangerous_patterns or [r"rm\s+-rf?"]
+    # `is not None` (not `or`) so an explicit empty list disables the dangerous
+    # patterns -- required to prove the SANDBOX (not the guardrail) denies.
+    cfg.dangerous_shell_patterns = (
+        dangerous_patterns if dangerous_patterns is not None else [r"rm\s+-rf?"]
+    )
     cfg.network_commands = ["pip install"]
+    for k, v in overrides.items():
+        setattr(cfg, k, v)
     mem = MemoryStore(str(tmp_path / "n"), str(tmp_path / "l"))
     cm = ContextManager(cfg, mem)
     pres = Presenter(out=io.StringIO())
@@ -44,6 +51,7 @@ def _runner(tmp_path, script, lines, *, hitl=None, dangerous_patterns=None):
         cm,
         pres,
         input_fn=lambda _p: next(lines),
+        sandbox=sandbox if sandbox is not None else Sandbox(cfg),
     )
     return r, pres
 
@@ -214,3 +222,38 @@ def test_pure_prose_reply_ends_turn_without_finish(tmp_path):
     # Turn 2 acted (read_file) and finished normally.
     assert "ReadFile" in text
     assert "Reading foo." in text
+
+
+# --- G2: Sandbox gate fires AFTER the guardrail Allow. The guardrail is made
+# permissive here (no dangerous patterns; tests/ admitted to the write SCOPE)
+# so the Sandbox is the SOLE gate that can deny these actions -- proving the
+# gate is wired into the loop and runs after the soft guardrail allows, not
+# instead of it. If the gate were absent, `rm -rf /` would EXECUTE on the host
+# and tests/x.py would be WRITTEN to disk. -------------------------------------
+
+def test_sandbox_gate_denies_dangerous_shell_safe_shell_and_out_of_root_write(tmp_path):
+    _repo(tmp_path)
+    # Guardrail permissive: no dangerous patterns + tests/ in allowed_write_dirs,
+    # so only the Sandbox (default write_roots=["src"], denylist has rm -rf /)
+    # can deny. The deny reason must come from the sandbox, not the guardrail.
+    script = [
+        "Nuke.\nACTION: run_shell\nCOMMAND: rm -rf /\n",            # sandbox denylist hit
+        "List.\nACTION: run_shell\nCOMMAND: ls\n",                   # sandbox allows -> runs
+        "Write.\nACTION: write_file\nPATH: tests/x.py\n<<<\nx\n>>>\n",  # outside write_roots
+        "Done.\nACTION: finish\nREASON: done\n",
+    ]
+    r, pres = _runner(
+        tmp_path, script, iter([]),
+        dangerous_patterns=[],
+        allowed_write_dirs=["src", "tests"],
+    )
+    rc = r.run_task(str(tmp_path), goal="exercise sandbox gate", accept=None)
+    text = pres.out.getvalue()
+    # (1) rm -rf / denied, and the reason is the SANDBOX's (contains "sandbox").
+    assert "denied" in text
+    assert "sandbox" in text.lower()
+    # (2) the safe `ls` ran -- dispatcher executed it (RunShell surfaced).
+    assert "RunShell" in text
+    # (3) tests/x.py was NOT written (sandbox denied the out-of-root write).
+    assert not (tmp_path / "tests" / "x.py").exists()
+    assert rc == 0  # Finish after the denies -> FINISH -> rc 0

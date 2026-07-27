@@ -1,6 +1,7 @@
 from harness.actions.parser import ParseError, split_prose_and_action
 from harness.actions.protocol import Finish, RunTests
-from harness.guardrails.guardrail import AskHuman, Deny
+from harness.guardrails.guardrail import Allow, AskHuman, Deny
+from harness.guardrails.sandbox import Containerize
 from harness.interactive.presenter import Presenter
 from harness.types import Message
 
@@ -17,6 +18,7 @@ class ChatRunner:
         context_manager,
         presenter=None,
         input_fn=None,
+        sandbox=None,
     ):
         self.llm = llm
         self.config = config
@@ -27,6 +29,7 @@ class ChatRunner:
         self.context_manager = context_manager
         self.presenter = presenter or Presenter()
         self.input_fn = input_fn or input
+        self.sandbox = sandbox
 
     def run(self, repo: str, accept: str | None = None) -> int:
         self.presenter.welcome(repo, accept)
@@ -107,6 +110,19 @@ class ChatRunner:
                 # §3.5 fail-closed: in non-interactive task mode a dangerous /
                 # network action is denied rather than hanging on a prompt.
                 decision = self.hitl.request(action, decision.reason)
+            # G2: Sandbox — HARD execution-boundary gate. Runs ONLY after the
+            # soft guardrail (+HITL) allowed, so a guardrail Deny wins and the
+            # sandbox is never consulted for an already-denied action. A Deny
+            # here is handled identically to a guardrail Deny below.
+            if self.sandbox is not None and isinstance(decision, Allow):
+                sbox = self.sandbox.check(action)
+                if isinstance(sbox, Deny):
+                    decision = sbox
+                elif isinstance(sbox, AskHuman):
+                    decision = self.hitl.request(action, sbox.reason)
+                elif isinstance(sbox, Containerize):
+                    pass  # G5: route to SandboxDockerExecutor instead of the host dispatcher.
+                # Allow: fall through unchanged -> proceed to dispatch.
             if isinstance(decision, Deny):
                 self.presenter.show_deny(decision.reason)
                 history.append(Message("assistant", raw))
