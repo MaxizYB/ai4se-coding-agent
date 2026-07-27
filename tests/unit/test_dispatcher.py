@@ -42,6 +42,14 @@ def test_run_shell(tmp_path):
     assert r.ok and "hello" in r.stdout
 
 
+def test_run_shell_pipes_stdin(tmp_path):
+    # Freedom fix: RunShell pipes optional STDIN so the agent can drive
+    # interactive CLIs (e.g. feed inputs to a program that reads stdin).
+    d = ToolDispatcher(Config.default()); d.config.project_root = str(tmp_path)
+    r = d.execute(RunShell("cat", stdin="hello\nworld\n"))
+    assert r.ok and "hello" in r.stdout and "world" in r.stdout
+
+
 def test_run_tests_captures_junit_with_relative_project_root(tmp_path, monkeypatch):
     # Fix E: a RELATIVE project_root must still capture the junit XML. With a
     # relative path, pytest (cwd=project_root) and the junit reader (process

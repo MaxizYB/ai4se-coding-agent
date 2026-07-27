@@ -40,6 +40,11 @@ Exact examples (copy the format precisely):
   ACTION: list_dir
   PATH: src
 
+  ACTION: write_file
+  PATH: src/new.py
+  print('hello')        # file content can be raw text after PATH (no fence needed),
+  x = 1                 # OR a <<<...>>> block — either works.
+
   ACTION: edit_file
   PATH: src/foo.py
   <<<OLD
@@ -49,6 +54,13 @@ Exact examples (copy the format precisely):
       return a + b
   >>>NEW
 
+  ACTION: run_shell
+  COMMAND: python src/game.py
+  STDIN:
+  5                      # stdin goes on the lines AFTER "STDIN:" (multi-line OK),
+  3                      # so you can drive interactive programs that read input.
+  7
+
   ACTION: run_tests
   ARGS: tests/test_foo.py::test_add
 
@@ -57,8 +69,10 @@ Exact examples (copy the format precisely):
 
 Rules:
 - PATH is REQUIRED for read_file/write_file/edit_file; OPTIONAL for list_dir (omit to list the repo root).
-- Prefer edit_file over write_file (targeted edits, not whole-file rewrites).
-- After editing, run run_tests to verify.
+- write_file: put file content after the PATH line (raw), or use a <<<...>>> block.
+- Prefer edit_file over write_file for targeted changes; use write_file for new files.
+- run_shell STDIN is optional — use it to feed input to interactive programs; omit for non-interactive commands.
+- After editing, run run_tests to verify (when the project has tests).
 - One action per turn when acting. Plain text with no ACTION = a reply that ends your turn.{accept}"""
 
 

@@ -59,10 +59,15 @@ class ToolDispatcher:
                 f.write(text.replace(action.old, action.new, 1))
             return ToolResult(True, f"edited {action.path}", "", 0)
         if isinstance(action, RunShell):
+            # `input=action.stdin`: pipe optional STDIN into the command so the
+            # agent can drive interactive CLIs (e.g. feed moves to a game).
+            # Empty string = immediate EOF (no hang on a TTY) — safer than the
+            # old behavior of inheriting the parent's stdin.
             r = subprocess.run(
                 action.command,
                 cwd=self.config.project_root,
                 shell=True,
+                input=action.stdin,
                 capture_output=True,
                 text=True,
                 check=False,

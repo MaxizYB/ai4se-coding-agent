@@ -46,9 +46,13 @@ def test_parse_error_on_missing_action():
         parse_action("no action here at all")
 
 
-def test_parse_error_on_unterminated_block():
-    with pytest.raises(ParseError):
-        parse_action("ACTION: write_file\nPATH: a.py\n<<<\nnever closed")
+def test_write_file_unterminated_block_treated_as_raw_content():
+    # Freedom change: an unterminated <<< is NO LONGER an error. The parser
+    # falls back to raw content after PATH, so the stray <<< just becomes part
+    # of the file body. Old strict behavior rejected this; high-freedom accepts
+    # whatever the LLM wrote rather than failing on a fence quirk.
+    a = parse_action("ACTION: write_file\nPATH: a.py\n<<<\nnever closed")
+    assert a == WriteFile("a.py", "<<<\nnever closed")
 
 
 def test_parse_error_on_missing_path_write_file():
@@ -82,3 +86,24 @@ def test_list_dir_without_path_defaults_to_cwd():
     from harness.actions.protocol import ListDir
     assert parse_action("ACTION: list_dir\n") == ListDir(".")
     assert parse_action("ACTION: list_dir\nPATH: src\n") == ListDir("src")
+
+
+def test_write_file_raw_content_after_path_no_block():
+    # Freedom fix: LLMs often dump file content right after PATH without a
+    # <<<>>> block (especially for large multi-line files). The old parser
+    # rejected this 3x before the LLM happened to use the block. Accept both.
+    raw = "ACTION: write_file\nPATH: a.py\nprint('hi')\nx = 1\n"
+    assert parse_action(raw) == WriteFile("a.py", "print('hi')\nx = 1\n")
+
+
+def test_run_shell_multiline_stdin():
+    # Freedom fix: STDIN is everything after the `STDIN:` line — multi-line,
+    # so the agent can drive interactive CLIs (feed moves to a game).
+    from harness.actions.protocol import RunShell
+    raw = "ACTION: run_shell\nCOMMAND: python g.py\nSTDIN:\n5\n3\n7\n"
+    assert parse_action(raw) == RunShell("python g.py", "5\n3\n7\n")
+
+
+def test_run_shell_no_stdin_defaults_empty():
+    from harness.actions.protocol import RunShell
+    assert parse_action("ACTION: run_shell\nCOMMAND: ls\n") == RunShell("ls", "")

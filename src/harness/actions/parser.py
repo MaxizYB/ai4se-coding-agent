@@ -27,7 +27,6 @@ _ACTION_RE = re.compile(r"ACTION:\s*(?P<name>\w+)\b")
 _SIMPLE = {
     "read_file": lambda p: ReadFile(p["PATH"]),
     "list_dir": lambda p: ListDir(p.get("PATH", ".")),  # PATH optional — defaults to repo root (cwd)
-    "run_shell": lambda p: RunShell(p["COMMAND"]),
     "run_tests": lambda p: RunTests(p.get("ARGS", "")),
     "finish": lambda p: Finish(p.get("REASON", "")),
 }
@@ -42,6 +41,19 @@ def _parse_params(block: str) -> dict:
     return params
 
 
+def _rest_after_param(tail: str, key: str) -> str | None:
+    """Freedom fallback for write_file: if the LLM omits the <<<>>> block and
+    just dumps file content after the `PATH:` line, return everything after
+    that line. Real LLMs often write `ACTION: write_file\\nPATH: x\\n<content>`
+    without the block fence -> old parser rejected it 3x before succeeding.
+    """
+    lines = tail.splitlines(keepends=True)
+    for i, ln in enumerate(lines):
+        if ln.strip().startswith(key + ":"):
+            return "".join(lines[i + 1 :])
+    return None
+
+
 def parse_action(text: str) -> Action:
     m = _ACTION_RE.search(text)
     if not m:
@@ -54,9 +66,21 @@ def parse_action(text: str) -> Action:
     if name == "write_file":
         body = blocks.get("DEFAULT")
         if body is None:
-            raise ParseError("write_file requires a content block")
+            # Freedom: accept raw content dumped after the PATH line when the
+            # LLM omits the <<<>>> block (common for large multi-line files).
+            body = _rest_after_param(tail, "PATH")
+        if body is None or body.strip() == "":
+            raise ParseError("write_file requires content (a <<<>>> block OR raw text after the PATH line)")
         try:
             return WriteFile(params["PATH"], body)
+        except KeyError as e:
+            raise ParseError(f"missing parameter {e} for {name}") from e
+    if name == "run_shell":
+        # Freedom: STDIN is everything on the lines AFTER the `STDIN:` line
+        # (multi-line, to drive interactive CLIs — e.g. feed moves to a game).
+        stdin = _rest_after_param(tail, "STDIN") or ""
+        try:
+            return RunShell(params["COMMAND"], stdin)
         except KeyError as e:
             raise ParseError(f"missing parameter {e} for {name}") from e
     if name == "edit_file":

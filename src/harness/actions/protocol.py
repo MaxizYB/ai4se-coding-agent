@@ -32,6 +32,7 @@ class EditFile(Action):
 @dataclass(frozen=True)
 class RunShell(Action):
     command: str
+    stdin: str = ""  # optional stdin to pipe into the command (drive interactive CLIs)
 
 
 @dataclass(frozen=True)
