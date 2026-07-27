@@ -1,5 +1,6 @@
 import ast
 import os
+import re
 
 from harness.config import Config
 from harness.memory.compactor import Compactor
@@ -7,6 +8,10 @@ from harness.memory.store import MemoryStore
 from harness.types import Message
 
 __all__ = ["ContextManager", "Message", "locate_impl_module"]
+
+# M3: @mention file pull — matches `@<path>` tokens that look like file paths
+# (must contain a dot delimiting an extension). Bare `@user` is NOT matched.
+_MENTION_RE = re.compile(r"@([A-Za-z0-9_./\-]+\.[A-Za-z0-9]+)")
 
 _SYSTEM = """You are a TDD red-green fix agent. Make the failing test pass by editing source under the allowed scope.
 Emit EXACTLY ONE action per turn using this protocol:
@@ -175,4 +180,47 @@ class ContextManager:
                 msgs.append(Message("system", "Project memory (AGENTS.md):\n" + agents_content))
         history = Compactor(self.config).maybe_compact(history)
         msgs += history[-self.config.max_history:]
+        self._inject_mentions(msgs, repo)
         return msgs
+
+    def _inject_mentions(self, msgs: list[Message], repo: str) -> None:
+        """M3: pull content of files `@<path>`-mentioned in the last user
+        message into context. Injection messages are inserted immediately
+        after that user message so the agent sees them before its turn.
+        Missing files are skipped; oversized files are truncated with a
+        marker. Bounded by ``context_mention_max_files`` and deterministic.
+        """
+        last_user_idx = None
+        for i in range(len(msgs) - 1, -1, -1):
+            if msgs[i].role == "user":
+                last_user_idx = i
+                break
+        if last_user_idx is None:
+            return
+        max_files = self.config.context_mention_max_files
+        max_chars = self.config.context_mention_max_chars
+        seen: set[str] = set()
+        unique: list[str] = []
+        for m in _MENTION_RE.findall(msgs[last_user_idx].content):
+            if m not in seen:
+                seen.add(m)
+                unique.append(m)
+                if len(unique) >= max_files:
+                    break
+        injections: list[Message] = []
+        for mentioned in unique:
+            path = os.path.join(repo, mentioned)
+            if not (os.path.exists(path) and os.path.isfile(path)):
+                continue
+            try:
+                with open(path) as f:
+                    text = f.read()
+            except OSError:
+                continue
+            if len(text) <= max_chars:
+                body = text
+            else:
+                body = f"{text[:max_chars]}\n... [truncated, {len(text)} chars total]"
+            injections.append(Message("user", f"<@{mentioned}>\n{body}"))
+        if injections:
+            msgs[last_user_idx + 1:last_user_idx + 1] = injections

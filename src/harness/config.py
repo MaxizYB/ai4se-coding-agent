@@ -21,6 +21,12 @@ class Config:
     # system message and the last `context_keep_recent` turns stay verbatim.
     context_compact_threshold: int = 6000
     context_keep_recent: int = 6
+    # M3: @mention file pull — when the last user message references
+    # `@<path>` files, their content is pulled into context (up to
+    # `context_mention_max_files` unique files, each capped at
+    # `context_mention_max_chars`; larger files are truncated with a marker).
+    context_mention_max_chars: int = 8000
+    context_mention_max_files: int = 3
     # Sandbox: HARD execution-boundary gate (Guardrail asks a human; Sandbox
     # says no regardless). Deterministic, mock-testable. See sandbox.py.
     sandbox_network: str = "allowlist"
@@ -78,6 +84,8 @@ def load_config(path: str | None) -> Config:
     cfg.max_history = ctx.get("max_history", cfg.max_history)
     cfg.context_compact_threshold = ctx.get("compact_threshold", cfg.context_compact_threshold)
     cfg.context_keep_recent = ctx.get("keep_recent", cfg.context_keep_recent)
+    cfg.context_mention_max_chars = ctx.get("mention_max_chars", cfg.context_mention_max_chars)
+    cfg.context_mention_max_files = ctx.get("mention_max_files", cfg.context_mention_max_files)
     cfg.sandbox_network = sb.get("network", cfg.sandbox_network)
     cfg.sandbox_network_allow = sb.get("network_allow", cfg.sandbox_network_allow)
     cfg.sandbox_denied_commands = sb.get("denied_commands", cfg.sandbox_denied_commands)

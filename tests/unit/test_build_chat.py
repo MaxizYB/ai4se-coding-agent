@@ -90,3 +90,46 @@ def test_build_chat_empty_agents_md_omits_project_memory(tmp_path):
     msgs = cm.build_chat(str(tmp_path), None, [])
     joined = "\n".join(x.content for x in msgs)
     assert "Project memory (AGENTS.md):" not in joined
+
+
+def test_build_chat_pulls_mentioned_file_into_context(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "foo.py").write_text("print('hi')\n")
+    m = MemoryStore(str(tmp_path / "n"), str(tmp_path / "l"))
+    cm = ContextManager(Config.default(), m)
+    history = [Message("user", "look at @src/foo.py")]
+    msgs = cm.build_chat(str(tmp_path), None, history)
+    joined = "\n".join(x.content for x in msgs)
+    assert "<@src/foo.py>" in joined
+    assert "print('hi')" in joined
+
+
+def test_build_chat_mention_missing_file_skipped_no_crash(tmp_path):
+    m = MemoryStore(str(tmp_path / "n"), str(tmp_path / "l"))
+    cm = ContextManager(Config.default(), m)
+    history = [Message("user", "check @src/missing.py")]
+    msgs = cm.build_chat(str(tmp_path), None, history)
+    joined = "\n".join(x.content for x in msgs)
+    assert "<@src/missing.py>" not in joined
+
+
+def test_build_chat_mention_oversized_file_truncated(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "big.py").write_text("x" * 200)
+    m = MemoryStore(str(tmp_path / "n"), str(tmp_path / "l"))
+    cm = ContextManager(Config.default(), m)
+    cm.config.context_mention_max_chars = 50
+    history = [Message("user", "see @src/big.py")]
+    msgs = cm.build_chat(str(tmp_path), None, history)
+    joined = "\n".join(x.content for x in msgs)
+    assert "<@src/big.py>" in joined
+    assert "[truncated, 200 chars total]" in joined
+
+
+def test_build_chat_non_file_mention_token_not_matched(tmp_path):
+    m = MemoryStore(str(tmp_path / "n"), str(tmp_path / "l"))
+    cm = ContextManager(Config.default(), m)
+    history = [Message("user", "hi @user how are you")]
+    msgs = cm.build_chat(str(tmp_path), None, history)
+    joined = "\n".join(x.content for x in msgs)
+    assert "<@" not in joined

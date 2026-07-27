@@ -25,6 +25,12 @@ max_history = 8
 # the last `keep_recent` turns stay verbatim (deterministic, no LLM).
 compact_threshold = 6000
 keep_recent = 6
+# M3: @mention file pull. When the last user message references `@<path>`
+# files, their content is pulled into context: up to `mention_max_files` unique
+# files, each capped at `mention_max_chars` (larger files are truncated with a
+# marker). Missing files are skipped silently.
+mention_max_chars = 8000
+mention_max_files = 3
 
 # Sandbox: HARD execution-boundary gate (Guardrail asks a human; Sandbox says no
 # regardless). Writes must land under a write-root; denylisted commands never
