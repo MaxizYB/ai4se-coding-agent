@@ -164,6 +164,15 @@ class ContextManager:
         notes = self.memory.load_notes()
         if notes:
             msgs.append(Message("system", "Project notes:\n" + notes))
+        agents_path = os.path.join(repo, "AGENTS.md")
+        if os.path.exists(agents_path):
+            try:
+                with open(agents_path) as f:
+                    agents_content = f.read()
+            except OSError:
+                agents_content = ""
+            if agents_content:
+                msgs.append(Message("system", "Project memory (AGENTS.md):\n" + agents_content))
         history = Compactor(self.config).maybe_compact(history)
         msgs += history[-self.config.max_history:]
         return msgs

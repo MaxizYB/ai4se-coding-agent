@@ -49,3 +49,44 @@ def test_build_chat_compacts_over_threshold_history(tmp_path):
     assert "[compacted history]" in joined  # compaction fired
     assert "edit_file" in joined  # dropped action preserved as a fact
     assert "recent-q" in joined and "recent-a" in joined  # recent kept verbatim
+
+
+def test_build_chat_loads_agents_md_project_memory(tmp_path):
+    (tmp_path / "AGENTS.md").write_text("Always use ruff for linting.\n")
+    m = MemoryStore(str(tmp_path / "n"), str(tmp_path / "l"))
+    cm = ContextManager(Config.default(), m)
+    msgs = cm.build_chat(str(tmp_path), None, [])
+    joined = "\n".join(x.content for x in msgs)
+    assert "Project memory (AGENTS.md):" in joined
+    assert "Always use ruff for linting." in joined
+
+
+def test_build_chat_without_agents_md_omits_project_memory(tmp_path):
+    # No AGENTS.md present in repo dir.
+    m = MemoryStore(str(tmp_path / "n"), str(tmp_path / "l"))
+    cm = ContextManager(Config.default(), m)
+    msgs = cm.build_chat(str(tmp_path), None, [])
+    joined = "\n".join(x.content for x in msgs)
+    assert "Project memory (AGENTS.md):" not in joined
+
+
+def test_build_chat_includes_both_agents_md_and_notes(tmp_path):
+    (tmp_path / "AGENTS.md").write_text("Convention: use dataclasses.\n")
+    m = MemoryStore(str(tmp_path / "n"), str(tmp_path / "l"))
+    m.save_notes("run tests with: pytest")
+    cm = ContextManager(Config.default(), m)
+    msgs = cm.build_chat(str(tmp_path), None, [])
+    joined = "\n".join(x.content for x in msgs)
+    assert "Project memory (AGENTS.md):" in joined
+    assert "Convention: use dataclasses." in joined
+    assert "Project notes:" in joined
+    assert "pytest" in joined
+
+
+def test_build_chat_empty_agents_md_omits_project_memory(tmp_path):
+    (tmp_path / "AGENTS.md").write_text("")
+    m = MemoryStore(str(tmp_path / "n"), str(tmp_path / "l"))
+    cm = ContextManager(Config.default(), m)
+    msgs = cm.build_chat(str(tmp_path), None, [])
+    joined = "\n".join(x.content for x in msgs)
+    assert "Project memory (AGENTS.md):" not in joined
