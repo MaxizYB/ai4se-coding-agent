@@ -42,6 +42,7 @@ def _cmd_fix(args):
     from harness.guardrails.guardrail import Guardrail
     from harness.guardrails.hitl import HITL, FailClosedApprover
     from harness.guardrails.sandbox import Sandbox
+    from harness.guardrails.sandbox_docker import SandboxDockerExecutor
     from harness.memory.store import MemoryStore
     from harness.tools.dispatcher import ToolDispatcher
     cfg = load_config(args.config); cfg.project_root = args.repo
@@ -52,9 +53,12 @@ def _cmd_fix(args):
     llm = _resolve_llm()
     if llm is None:
         print("no credentials (run `harness init` or set ZHIPU_API_KEY)", file=sys.stderr); return 2
+    # G5: build the hard-isolation executor only when containerize is opted in;
+    # otherwise pass None and the loop falls back to host dispatch.
+    sde = SandboxDockerExecutor(cfg) if cfg.sandbox_containerize else None
     runner = AgentRunner(llm, cfg, ToolDispatcher(cfg), Guardrail(cfg), HITL(FailClosedApprover()),
                          FeedbackEngine(cfg.test_timeout_s, cfg.stuck_repeat_n, cfg.stuck_no_progress_m,
-                                        cfg.hint_history_lines), cm, sandbox=Sandbox(cfg))
+                                        cfg.hint_history_lines), cm, sandbox=Sandbox(cfg), sandbox_docker=sde)
     result = runner.run(Task(args.repo, args.test))
     print(f"OUTCOME: {result.outcome}")
     print(result.edits_diff)
@@ -91,13 +95,16 @@ def _build_chat_components(args):
     from harness.feedback.engine import FeedbackEngine
     from harness.guardrails.guardrail import Guardrail
     from harness.guardrails.sandbox import Sandbox
+    from harness.guardrails.sandbox_docker import SandboxDockerExecutor
     from harness.memory.store import MemoryStore
     from harness.tools.dispatcher import ToolDispatcher
     cfg = load_config(getattr(args, "config", None)); cfg.project_root = args.repo
     mem = MemoryStore(os.path.join(args.repo, "HARNESS.md"), os.path.join(args.repo, ".harness", "run.jsonl"))
     cm = ContextManager(cfg, mem)
     fe = FeedbackEngine(cfg.test_timeout_s, cfg.stuck_repeat_n, cfg.stuck_no_progress_m, cfg.hint_history_lines)
-    return cfg, ToolDispatcher(cfg), Guardrail(cfg), fe, cm, Sandbox(cfg)
+    # G5: hard-isolation executor only when opted in; None otherwise.
+    sde = SandboxDockerExecutor(cfg) if cfg.sandbox_containerize else None
+    return cfg, ToolDispatcher(cfg), Guardrail(cfg), fe, cm, Sandbox(cfg), sde
 
 
 def _cmd_chat(args):
@@ -106,8 +113,8 @@ def _cmd_chat(args):
     llm = _resolve_llm()
     if llm is None:
         print("no credentials (run `harness init` or set ZHIPU_API_KEY)", file=sys.stderr); return 2
-    cfg, disp, gr, fe, cm, sb = _build_chat_components(args)
-    ChatRunner(llm, cfg, disp, gr, HITL(ConsoleApprover()), fe, cm, sandbox=sb).run(args.repo, accept=args.accept)
+    cfg, disp, gr, fe, cm, sb, sde = _build_chat_components(args)
+    ChatRunner(llm, cfg, disp, gr, HITL(ConsoleApprover()), fe, cm, sandbox=sb, sandbox_docker=sde).run(args.repo, accept=args.accept)
     return 0
 
 
@@ -117,8 +124,8 @@ def _cmd_task(args):
     llm = _resolve_llm()
     if llm is None:
         print("no credentials (run `harness init` or set ZHIPU_API_KEY)", file=sys.stderr); return 2
-    cfg, disp, gr, fe, cm, sb = _build_chat_components(args)
-    runner = ChatRunner(llm, cfg, disp, gr, HITL(FailClosedApprover()), fe, cm, sandbox=sb)
+    cfg, disp, gr, fe, cm, sb, sde = _build_chat_components(args)
+    runner = ChatRunner(llm, cfg, disp, gr, HITL(FailClosedApprover()), fe, cm, sandbox=sb, sandbox_docker=sde)
     return runner.run_task(args.repo, args.goal, accept=args.accept)
 
 

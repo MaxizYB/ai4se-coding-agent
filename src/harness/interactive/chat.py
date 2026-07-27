@@ -21,6 +21,7 @@ class ChatRunner:
         presenter=None,
         input_fn=None,
         sandbox=None,
+        sandbox_docker=None,
     ):
         self.llm = llm
         self.config = config
@@ -32,6 +33,11 @@ class ChatRunner:
         self.presenter = presenter or Presenter()
         self.input_fn = input_fn or input
         self.sandbox = sandbox
+        # G5: hard-isolation executor. When the Sandbox returns Containerize and
+        # this is injected, RunShell/RunTests run inside a throwaway container
+        # (--network=none, read-only fs, repo bind-mounted at /work) instead of
+        # the host dispatcher. None (default) => fall back to host dispatch.
+        self.sandbox_docker = sandbox_docker
         # G4: per-turn log of tool events (file changes / shell / tests) used to
         # build the structured end-of-task summary. Reset at the start of each
         # `_agent_loop` so the report reflects ONE task, not the whole session.
@@ -122,10 +128,13 @@ class ChatRunner:
                 # §3.5 fail-closed: in non-interactive task mode a dangerous /
                 # network action is denied rather than hanging on a prompt.
                 decision = self.hitl.request(action, decision.reason)
-            # G2: Sandbox — HARD execution-boundary gate. Runs ONLY after the
+            # G2/G5: Sandbox — HARD execution-boundary gate. Runs ONLY after the
             # soft guardrail (+HITL) allowed, so a guardrail Deny wins and the
             # sandbox is never consulted for an already-denied action. A Deny
-            # here is handled identically to a guardrail Deny below.
+            # here is handled identically to a guardrail Deny below. When the
+            # sandbox says Containerize and a SandboxDockerExecutor is injected,
+            # the RunShell/RunTests dispatch below routes to it (hard isolation).
+            use_docker = False
             if self.sandbox is not None and isinstance(decision, Allow):
                 sbox = self.sandbox.check(action)
                 if isinstance(sbox, Deny):
@@ -133,7 +142,7 @@ class ChatRunner:
                 elif isinstance(sbox, AskHuman):
                     decision = self.hitl.request(action, sbox.reason)
                 elif isinstance(sbox, Containerize):
-                    pass  # G5: route to SandboxDockerExecutor instead of the host dispatcher.
+                    use_docker = self.sandbox_docker is not None
                 # Allow: fall through unchanged -> proceed to dispatch.
             if isinstance(decision, Deny):
                 self.presenter.show_deny(decision.reason)
@@ -172,7 +181,16 @@ class ChatRunner:
                 self.presenter.show_done(action.reason)
                 self._emit_report("FINISH", action.reason)
                 return "FINISH"
-            result = self.dispatcher.execute(action)
+            # G5: route a Containerize decision to the SandboxDockerExecutor
+            # (throwaway container) when one is injected; otherwise fall back to
+            # the host dispatcher so non-containerized runs still work. Only
+            # RunShell/RunTests are ever Containerized (see Sandbox.check).
+            if use_docker and isinstance(action, RunShell):
+                result = self.sandbox_docker.run_shell(action)
+            elif use_docker and isinstance(action, RunTests):
+                result = self.sandbox_docker.run_tests(action)
+            else:
+                result = self.dispatcher.execute(action)
             self.presenter.show_action(action, result)
             # G4: record the tool event AFTER it actually applied (post diff-
             # gate, post-dispatch). ReadFile/ListDir are observability-only and

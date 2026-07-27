@@ -48,7 +48,7 @@ class AgentRunner:
     # see PLAN.md "HUMAN_ABORTED wiring (T19)".
     HUMAN_ABORTED = "HUMAN_ABORTED"  # mandated terminal state; see note above
 
-    def __init__(self, llm, config, dispatcher, guardrail, hitl, feedback_engine, context_manager, sandbox=None):
+    def __init__(self, llm, config, dispatcher, guardrail, hitl, feedback_engine, context_manager, sandbox=None, sandbox_docker=None):
         self.llm = llm
         self.config = config
         self.dispatcher = dispatcher
@@ -57,6 +57,8 @@ class AgentRunner:
         self.feedback_engine = feedback_engine
         self.context_manager = context_manager
         self.sandbox = sandbox
+        # G5: hard-isolation executor for the Containerize path (see chat.py).
+        self.sandbox_docker = sandbox_docker
 
     def _snapshot(self, path):
         p = os.path.join(self.config.project_root, path)
@@ -100,10 +102,13 @@ class AgentRunner:
             observation = None
             if isinstance(decision, AskHuman):
                 decision = self.hitl.request(action, decision.reason)
-            # G2: Sandbox — HARD execution-boundary gate. Runs ONLY after the
+            # G2/G5: Sandbox — HARD execution-boundary gate. Runs ONLY after the
             # soft guardrail (+HITL) allowed; a Deny here is recorded as a Deny
             # turn below (same as a guardrail Deny) and the action never reaches
             # the dispatcher. Guardrail Deny wins; sandbox is not consulted.
+            # When the sandbox says Containerize and a SandboxDockerExecutor is
+            # injected, the dispatch below routes RunShell/RunTests to it.
+            use_docker = False
             if self.sandbox is not None and isinstance(decision, Allow):
                 sbox = self.sandbox.check(action)
                 if isinstance(sbox, Deny):
@@ -111,7 +116,7 @@ class AgentRunner:
                 elif isinstance(sbox, AskHuman):
                     decision = self.hitl.request(action, sbox.reason)
                 elif isinstance(sbox, Containerize):
-                    pass  # G5: route to SandboxDockerExecutor instead of the host dispatcher.
+                    use_docker = self.sandbox_docker is not None
                 # Allow: fall through unchanged -> proceed to dispatch.
             # G3: DiffGate (write-before-apply), mirrored from the chat loop. In
             # batch/fix mode there is no presenter, so only "ask" matters: a
@@ -135,7 +140,15 @@ class AgentRunner:
                 # return the catch-all `unknown action Finish` ToolResult,
                 # polluting the turn summary + the §3.10 WebUI stream). Finish
                 # falls through to the termination check below.
-                result = self.dispatcher.execute(action)
+                # G5: route a Containerize decision to the SandboxDockerExecutor
+                # (throwaway container) when injected; else host dispatch. Only
+                # RunShell/RunTests are ever Containerized (see Sandbox.check).
+                if use_docker and isinstance(action, RunShell):
+                    result = self.sandbox_docker.run_shell(action)
+                elif use_docker and isinstance(action, RunTests):
+                    result = self.sandbox_docker.run_tests(action)
+                else:
+                    result = self.dispatcher.execute(action)
                 summary = (result.stdout + result.stderr)[:200]
                 # G4: record the applied tool event (post diff-gate + dispatch).
                 if isinstance(action, (WriteFile, EditFile)):
