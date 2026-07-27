@@ -20,6 +20,11 @@ hint_history_lines = 8
 
 [context]
 max_history = 8
+# M1: conversation compaction. When total history chars exceed
+# `compact_threshold`, older turns fold into ONE structured system message and
+# the last `keep_recent` turns stay verbatim (deterministic, no LLM).
+compact_threshold = 6000
+keep_recent = 6
 
 # Sandbox: HARD execution-boundary gate (Guardrail asks a human; Sandbox says no
 # regardless). Writes must land under a write-root; denylisted commands never

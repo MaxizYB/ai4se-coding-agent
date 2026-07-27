@@ -30,3 +30,22 @@ def test_build_chat_includes_notes_and_bounds_history(tmp_path):
     joined = "\n".join(x.content for x in msgs)
     assert "pytest" in joined  # notes present
     assert "turn4" in joined and "turn0" not in joined  # bounded to last 2
+
+
+def test_build_chat_compacts_over_threshold_history(tmp_path):
+    m = MemoryStore(str(tmp_path / "n"), str(tmp_path / "l"))
+    cm = ContextManager(Config.default(), m)
+    cm.config.context_compact_threshold = 50
+    cm.config.context_keep_recent = 2
+    cm.config.max_history = 8
+    history = [
+        Message("assistant", "ACTION: edit_file\nPATH: src/foo.py\n<<<OLD\nx\n>>>OLD"),
+        Message("user", "OBSERVATION: done " + "y" * 200),
+        Message("user", "recent-q"),
+        Message("assistant", "recent-a"),
+    ]
+    msgs = cm.build_chat("/repo", None, history)
+    joined = "\n".join(x.content for x in msgs)
+    assert "[compacted history]" in joined  # compaction fired
+    assert "edit_file" in joined  # dropped action preserved as a fact
+    assert "recent-q" in joined and "recent-a" in joined  # recent kept verbatim

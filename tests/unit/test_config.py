@@ -10,6 +10,8 @@ def test_defaults_are_safe():
     assert c.fail_closed_when_noninteractive is True
     assert c.max_iterations == 20 and c.test_timeout_s == 30
     assert c.max_history == 8
+    assert c.context_compact_threshold == 6000  # M1 compactor defaults
+    assert c.context_keep_recent == 6
     assert c.diff_preview == "ask"  # G3: default ask (fail-closed in batch)
 
 
@@ -47,3 +49,17 @@ diff_preview = "never"
     c = load_config(p.name)
     os.unlink(p.name)
     assert c.diff_preview == "never"  # [governance] section honored
+
+
+def test_load_context_compactor_overrides():
+    toml = """
+[context]
+compact_threshold = 1234
+keep_recent = 3
+"""
+    with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as p:
+        p.write(toml)
+    c = load_config(p.name)
+    os.unlink(p.name)
+    assert c.context_compact_threshold == 1234
+    assert c.context_keep_recent == 3

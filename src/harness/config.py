@@ -16,6 +16,11 @@ class Config:
     test_timeout_s: int = 30
     hint_history_lines: int = 8
     max_history: int = 8
+    # M1: conversation compaction — when history char size exceeds
+    # `context_compact_threshold`, older turns are folded into ONE structured
+    # system message and the last `context_keep_recent` turns stay verbatim.
+    context_compact_threshold: int = 6000
+    context_keep_recent: int = 6
     # Sandbox: HARD execution-boundary gate (Guardrail asks a human; Sandbox
     # says no regardless). Deterministic, mock-testable. See sandbox.py.
     sandbox_network: str = "allowlist"
@@ -71,6 +76,8 @@ def load_config(path: str | None) -> Config:
     cfg.test_timeout_s = bud.get("test_timeout_s", cfg.test_timeout_s)
     cfg.hint_history_lines = fb.get("hint_history_lines", cfg.hint_history_lines)
     cfg.max_history = ctx.get("max_history", cfg.max_history)
+    cfg.context_compact_threshold = ctx.get("compact_threshold", cfg.context_compact_threshold)
+    cfg.context_keep_recent = ctx.get("keep_recent", cfg.context_keep_recent)
     cfg.sandbox_network = sb.get("network", cfg.sandbox_network)
     cfg.sandbox_network_allow = sb.get("network_allow", cfg.sandbox_network_allow)
     cfg.sandbox_denied_commands = sb.get("denied_commands", cfg.sandbox_denied_commands)

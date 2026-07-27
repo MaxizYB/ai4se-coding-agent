@@ -2,6 +2,7 @@ import ast
 import os
 
 from harness.config import Config
+from harness.memory.compactor import Compactor
 from harness.memory.store import MemoryStore
 from harness.types import Message
 
@@ -163,5 +164,6 @@ class ContextManager:
         notes = self.memory.load_notes()
         if notes:
             msgs.append(Message("system", "Project notes:\n" + notes))
+        history = Compactor(self.config).maybe_compact(history)
         msgs += history[-self.config.max_history:]
         return msgs
