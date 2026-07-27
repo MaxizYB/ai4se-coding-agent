@@ -189,3 +189,28 @@ def test_finish_terminates_without_dispatching(tmp_path):
     assert "answered" in text           # Finish reason shown
     assert "done" in text
     assert "unknown action" not in text  # Finish was NOT dispatched
+
+
+def test_pure_prose_reply_ends_turn_without_finish(tmp_path):
+    # Conversational fix: a pure-prose reply (no ACTION) must END the turn and
+    # return to the user prompt — NOT internally re-prompt the agent until it
+    # emits Finish. The old `continue` made the agent print "done/FINISH" after
+    # every message, so the user could not hold a conversation. Claude/Codex
+    # model: text with no tool call = turn ends. Mock scripts always emitted
+    # an ACTION every turn, so this was invisible until live use.
+    _repo(tmp_path)
+    script = [
+        "I can read and edit files and run tests. What do you need?",  # pure prose, NO ACTION
+        "Reading foo.\nACTION: read_file\nPATH: src/foo.py\n",
+        "Done.\nACTION: finish\nREASON: read it\n",
+    ]
+    lines = iter(["what can you do?", "read foo.py", "/exit"])
+    r, pres = _runner(tmp_path, script, lines)
+    r.run(str(tmp_path), accept=None)
+    text = pres.out.getvalue()
+    # Turn 1 was a REPLY: prose shown, but NO "done"/"FINISH" status noise.
+    assert "I can read and edit files" in text
+    assert "--- REPLIED ---" not in text        # REPLIED is silent (no status line)
+    # Turn 2 acted (read_file) and finished normally.
+    assert "ReadFile" in text
+    assert "Reading foo." in text

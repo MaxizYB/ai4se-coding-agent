@@ -18,8 +18,14 @@ KEY: VALUE            # PATH: src/foo.py  /  ARGS: tests/t.py::test_x  /  COMMAN
 Rules: prefer edit_file over write_file; run run_tests to verify; emit finish when green. One action per turn."""
 
 _CHAT_SYSTEM = """You are a coding agent working in the repository at {repo}.
-Accomplish the user's task. Each turn: say in ONE short line what you are doing, THEN emit exactly one action using this protocol:
 
+Each turn, do exactly one of:
+- Emit a tool action (one short line of prose, then the ACTION block) to make progress.
+- Emit plain text with NO action — to answer a question, summarize, or ask the user. This ends your turn and returns control to the user.
+
+Use tool actions to accomplish the task and verify with run_tests. When the task is done, or the user asked a question that needs no changes, reply in plain text (no ACTION). Do not emit `finish` to answer a question — just reply without an action. Only edit/write files when the user actually asked for a change; for "what is this project"-style questions, read and reply, do not modify anything.
+
+ACTION protocol:
 ACTION: <read_file|list_dir|write_file|edit_file|run_shell|run_tests|finish>
 KEY: VALUE            # PATH: ... / ARGS: ... / COMMAND: ... / REASON: ...
 <<<TAG                 # content block (write_file: <<< ... >>> ; edit_file: <<<OLD ... >>>OLD + <<<NEW ... >>>NEW)
@@ -52,8 +58,8 @@ Exact examples (copy the format precisely):
 Rules:
 - PATH is REQUIRED for read_file/write_file/edit_file; OPTIONAL for list_dir (omit to list the repo root).
 - Prefer edit_file over write_file (targeted edits, not whole-file rewrites).
-- After editing, run run_tests to verify. Emit finish only when the task is truly complete.
-- Emit EXACTLY one action per turn. Plain prose with no ACTION ends your turn without acting.{accept}"""
+- After editing, run run_tests to verify.
+- One action per turn when acting. Plain text with no ACTION = a reply that ends your turn.{accept}"""
 
 
 def locate_impl_module(test_path: str) -> str | None:

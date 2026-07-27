@@ -45,7 +45,10 @@ class ChatRunner:
                 continue
             history.append(Message("user", line))
             outcome = self._agent_loop(repo, accept, history)
-            self.presenter.show_turn_end(outcome)
+            if outcome != "REPLIED":
+                # REPLIED is a normal conversational turn — no status line.
+                # SUCCESS/FINISH/BUDGET/ERROR get an explicit end-of-turn marker.
+                self.presenter.show_turn_end(outcome)
             if outcome == "SUCCESS":
                 # task satisfied; clear the completed turn's tool history, keep chatting
                 history = [m for m in history if m.role == "user"][-1:]
@@ -57,12 +60,13 @@ class ChatRunner:
         self.presenter.show_turn_end(outcome)
         # I1: --accept demands proof. rc 0 requires the accept test to have
         # gone green (outcome == "SUCCESS"); a self-certified Finish (or any
-        # non-green terminal state) is rejected. Without this the agent could
-        # return success via Finish without ever running the accept test.
+        # non-green terminal state, incl. a plain REPLIED without acting) is
+        # rejected. Without this the agent could return success via Finish/REPLY
+        # without ever running the accept test.
         if accept and outcome != "SUCCESS":
             self.presenter.show_info(f"acceptance test not verified: {accept}")
             return 1
-        return 0 if outcome in ("SUCCESS", "FINISH") else 1
+        return 0 if outcome in ("SUCCESS", "FINISH", "REPLIED") else 1
 
     def _agent_loop(self, repo: str, accept: str | None, history: list[Message]) -> str:
         parse_failures = 0
@@ -87,8 +91,14 @@ class ChatRunner:
                 continue
             self.presenter.show_prose(prose)
             if action is None:
+                # Pure-prose reply (no tool action): END the turn and return
+                # control to the user — the Claude/Codex model. The previous
+                # `continue` re-prompted the agent internally until it emitted
+                # Finish, so the user saw a "done/FINISH" after EVERY message
+                # and could not hold a conversation. Plain text = conversational
+                # reply or final summary; only a tool ACTION keeps the loop going.
                 history.append(Message("assistant", raw))
-                continue  # pure narration; let the agent continue
+                return "REPLIED"
             decision = self.guardrail.check(action)
             if isinstance(decision, AskHuman):
                 # C1: route through the injected HITL (fail-closed in task
