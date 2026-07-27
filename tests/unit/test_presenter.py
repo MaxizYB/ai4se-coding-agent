@@ -52,3 +52,45 @@ def test_show_diff_truncates_long_diff_to_about_2000_chars():
     text = out.getvalue()
     assert "proposed change: a.py" in text
     assert len(text) <= 2200  # truncated to ~2000 (+ header/newline slack)
+
+
+def test_show_report_renders_compact_block():
+    out = io.StringIO()
+    report = {
+        "outcome": "SUCCESS",
+        "files_changed": ["src/a.py", "src/b.py"],
+        "commands_run": ["ruff check src", "pytest"],
+        "tests": [
+            {"selector": "tests/test_a.py", "green": True},
+            {"selector": "tests/test_b.py", "green": False},
+        ],
+        "summary": "fixed and verified",
+    }
+    Presenter(out=out).show_report(report)
+    text = out.getvalue()
+    assert "=== task report ===" in text
+    assert "outcome: SUCCESS" in text
+    assert "files changed:" in text
+    assert "src/a.py" in text and "src/b.py" in text
+    assert "commands:" in text
+    assert "ruff check src" in text and "pytest" in text
+    assert "tests:" in text
+    # selector surfaced with a green/red marker
+    assert "tests/test_a.py" in text and "green" in text
+    assert "tests/test_b.py" in text and "red" in text
+    assert "summary: fixed and verified" in text
+
+
+def test_show_report_handles_empty_lists():
+    out = io.StringIO()
+    report = {
+        "outcome": "REPLIED",
+        "files_changed": [],
+        "commands_run": [],
+        "tests": [],
+        "summary": "",
+    }
+    Presenter(out=out).show_report(report)
+    text = out.getvalue()
+    assert "=== task report ===" in text
+    assert "outcome: REPLIED" in text

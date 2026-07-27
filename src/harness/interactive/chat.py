@@ -1,6 +1,7 @@
 from harness.actions.parser import ParseError, split_prose_and_action
-from harness.actions.protocol import EditFile, Finish, RunTests, WriteFile
+from harness.actions.protocol import EditFile, Finish, RunShell, RunTests, WriteFile
 from harness.governance.diff_preview import DiffPreviewer
+from harness.governance.task_report import TaskReport
 from harness.guardrails.guardrail import Allow, AskHuman, Deny
 from harness.guardrails.sandbox import Containerize
 from harness.interactive.presenter import Presenter
@@ -31,6 +32,10 @@ class ChatRunner:
         self.presenter = presenter or Presenter()
         self.input_fn = input_fn or input
         self.sandbox = sandbox
+        # G4: per-turn log of tool events (file changes / shell / tests) used to
+        # build the structured end-of-task summary. Reset at the start of each
+        # `_agent_loop` so the report reflects ONE task, not the whole session.
+        self.task_events: list[dict] = []
 
     def run(self, repo: str, accept: str | None = None) -> int:
         self.presenter.welcome(repo, accept)
@@ -73,6 +78,8 @@ class ChatRunner:
         return 0 if outcome in ("SUCCESS", "FINISH", "REPLIED") else 1
 
     def _agent_loop(self, repo: str, accept: str | None, history: list[Message]) -> str:
+        # G4: reset the per-turn event log so each report covers exactly one task.
+        self.task_events = []
         parse_failures = 0
         for _ in range(self.config.max_iterations):
             ctx = self.context_manager.build_chat(repo, accept, history)
@@ -91,6 +98,7 @@ class ChatRunner:
                     )
                 )
                 if parse_failures >= self.config.max_parse_failures:
+                    self._emit_report("ERROR", "ERROR")
                     return "ERROR"
                 continue
             self.presenter.show_prose(prose)
@@ -102,6 +110,9 @@ class ChatRunner:
                 # and could not hold a conversation. Plain text = conversational
                 # reply or final summary; only a tool ACTION keeps the loop going.
                 history.append(Message("assistant", raw))
+                # G4: a pure-prose REPLIED turn with NO tool events skips the
+                # report (avoids noise on simple Q&A); one that DID act shows it.
+                self._emit_report("REPLIED", prose)
                 return "REPLIED"
             decision = self.guardrail.check(action)
             if isinstance(decision, AskHuman):
@@ -159,13 +170,26 @@ class ChatRunner:
             # "unknown action Finish"); never dispatch Finish.
             if isinstance(action, Finish):
                 self.presenter.show_done(action.reason)
+                self._emit_report("FINISH", action.reason)
                 return "FINISH"
             result = self.dispatcher.execute(action)
             self.presenter.show_action(action, result)
+            # G4: record the tool event AFTER it actually applied (post diff-
+            # gate, post-dispatch). ReadFile/ListDir are observability-only and
+            # intentionally NOT recorded — they change nothing.
+            if isinstance(action, (WriteFile, EditFile)):
+                self.task_events.append({"kind": "file_changed", "path": action.path})
+            elif isinstance(action, RunShell):
+                self.task_events.append(
+                    {"kind": "shell", "cmd": action.command, "ok": result.ok}
+                )
             obs = (result.stdout + "\n" + result.stderr)[-2000:]
             if isinstance(action, RunTests):
                 fb = self.feedback_engine.classify(result)
                 self.presenter.show_feedback(fb)
+                self.task_events.append(
+                    {"kind": "test", "selector": action.args, "green": fb.is_green}
+                )
                 history.append(Message("assistant", raw))
                 history.append(
                     Message(
@@ -175,11 +199,21 @@ class ChatRunner:
                 )
                 if accept and accept in action.args and fb.is_green:
                     self.presenter.show_done(f"acceptance test green: {accept}")
+                    self._emit_report("SUCCESS", f"acceptance test green: {accept}")
                     return "SUCCESS"
                 continue
             history.append(Message("assistant", raw))
             history.append(Message("user", "OBSERVATION:\n" + obs))
+        self._emit_report("BUDGET_EXHAUSTED", "BUDGET_EXHAUSTED")
         return "BUDGET_EXHAUSTED"
+
+    def _emit_report(self, outcome: str, agent_summary: str) -> None:
+        # G4: build + render the structured end-of-task summary. A pure-prose
+        # REPLIED turn with no tool events is suppressed (no noise on Q&A).
+        if outcome == "REPLIED" and not self.task_events:
+            return
+        report = TaskReport.build(self.task_events, outcome, agent_summary)
+        self.presenter.show_report(report)
 
     def _slash(self, cmd: str, history: list[Message]) -> bool:
         """Return True if the REPL should exit."""

@@ -3,9 +3,10 @@ import os
 from dataclasses import dataclass, field
 
 from harness.actions.parser import ParseError, parse_action
-from harness.actions.protocol import EditFile, Finish, RunTests, WriteFile
+from harness.actions.protocol import EditFile, Finish, RunShell, RunTests, WriteFile
 from harness.feedback.types import FailureReport
 from harness.governance.diff_preview import DiffPreviewer
+from harness.governance.task_report import TaskReport
 from harness.guardrails.guardrail import Allow, AskHuman, Deny
 from harness.guardrails.sandbox import Containerize
 from harness.types import Message
@@ -31,6 +32,7 @@ class RunResult:
     turns: list = field(default_factory=list)
     edits_diff: str = ""
     failure_report: object = None
+    report: dict = None
 
 
 class AgentRunner:
@@ -65,6 +67,8 @@ class AgentRunner:
             return []
 
     def run(self, task: Task) -> RunResult:
+        # G4: per-run tool-event log for the structured end-of-task report.
+        task_events: list[dict] = []
         before = {}
         for d in self.config.allowed_write_dirs:
             root = os.path.join(self.config.project_root, d)
@@ -87,7 +91,9 @@ class AgentRunner:
                 fb = FailureReport(False, None, [], f"parse error: {e}", "", None, None, "", False)
                 ctx = self.context_manager.build(ctx + [Message("assistant", raw)], fb)
                 if parse_failures >= self.config.max_parse_failures:
-                    return RunResult("ERROR", turns)
+                    return RunResult(
+                        "ERROR", turns, report=self._report(task_events, "ERROR", "ERROR")
+                    )
                 continue
             decision = self.guardrail.check(action)
             summary = ""
@@ -131,14 +137,30 @@ class AgentRunner:
                 # falls through to the termination check below.
                 result = self.dispatcher.execute(action)
                 summary = (result.stdout + result.stderr)[:200]
+                # G4: record the applied tool event (post diff-gate + dispatch).
+                if isinstance(action, (WriteFile, EditFile)):
+                    task_events.append({"kind": "file_changed", "path": action.path})
+                elif isinstance(action, RunShell):
+                    task_events.append(
+                        {"kind": "shell", "cmd": action.command, "ok": result.ok}
+                    )
                 if isinstance(action, RunTests):
                     last_fb = self.feedback_engine.classify(result)
+                    task_events.append(
+                        {"kind": "test", "selector": action.args, "green": last_fb.is_green}
+                    )
                     if last_fb.is_green:
                         turns.append(Turn(raw, type(action).__name__, "Allow", summary))
-                        return self._finish("SUCCESS", turns, before)
+                        return self._finish("SUCCESS", turns, before, task_events, "SUCCESS")
                     if last_fb.stuck:
                         turns.append(Turn(raw, type(action).__name__, "Allow", summary))
-                        return RunResult("STUCK", turns, self._diff(before), last_fb)
+                        return RunResult(
+                            "STUCK",
+                            turns,
+                            self._diff(before),
+                            last_fb,
+                            self._report(task_events, "STUCK", "STUCK"),
+                        )
                 # C2: feed the tool observation back into the next context so
                 # the LLM can SEE read_file/list_dir/run_shell/run_tests
                 # output. The old loop only stored this in Turn.summary
@@ -153,17 +175,27 @@ class AgentRunner:
                 summary = f"denied: {decision.reason}"
             turns.append(Turn(raw, type(action).__name__, type(decision).__name__, summary))
             if isinstance(action, Finish):
-                return self._finish(
-                    "SUCCESS" if (last_fb and last_fb.is_green) else "ERROR", turns, before
-                )
+                outcome = "SUCCESS" if (last_fb and last_fb.is_green) else "ERROR"
+                return self._finish(outcome, turns, before, task_events, action.reason)
             history = ctx + [Message("assistant", raw)]
             if observation is not None:
                 history.append(Message("user", "OBSERVATION:\n" + observation))
             ctx = self.context_manager.build(history, last_fb)
-        return RunResult("BUDGET_EXHAUSTED", turns, self._diff(before), last_fb)
+        return RunResult(
+            "BUDGET_EXHAUSTED",
+            turns,
+            self._diff(before),
+            last_fb,
+            self._report(task_events, "BUDGET_EXHAUSTED", "BUDGET_EXHAUSTED"),
+        )
 
-    def _finish(self, outcome, turns, before):
-        return RunResult(outcome, turns, self._diff(before))
+    def _finish(self, outcome, turns, before, task_events, agent_summary):
+        return RunResult(
+            outcome, turns, self._diff(before), report=self._report(task_events, outcome, agent_summary)
+        )
+
+    def _report(self, task_events, outcome, agent_summary):
+        return TaskReport.build(task_events, outcome, agent_summary)
 
     def _diff(self, before):
         out = []

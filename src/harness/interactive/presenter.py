@@ -45,5 +45,24 @@ class Presenter:
     def show_info(self, text: str) -> None:
         self._write(text)
 
+    def show_report(self, report: dict) -> None:
+        # G4: structured end-of-task summary. Compact block so the "总结回答"
+        # after each task is scannable: outcome / files / commands / tests / why.
+        files = report.get("files_changed") or []
+        cmds = report.get("commands_run") or []
+        tests = report.get("tests") or []
+        lines = ["=== task report ===", f"outcome: {report.get('outcome', '')}"]
+        lines.append("files changed: " + (", ".join(files) if files else "(none)"))
+        lines.append("commands: " + (", ".join(cmds) if cmds else "(none)"))
+        if tests:
+            entries = [
+                f"{t['selector']}={'green' if t['green'] else 'red'}" for t in tests
+            ]
+            lines.append("tests: " + ", ".join(entries))
+        else:
+            lines.append("tests: (none)")
+        lines.append(f"summary: {report.get('summary', '') or '(none)'}")
+        self._write("\n".join(lines))
+
     def _write(self, s: str) -> None:
         self.out.write(s + "\n")

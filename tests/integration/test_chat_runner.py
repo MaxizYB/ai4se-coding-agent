@@ -320,3 +320,48 @@ def test_chat_diff_preview_never_applies_silently_without_asking(tmp_path):
     text = pres.out.getvalue()
     assert "proposed change" not in text                      # no preview shown
     assert (tmp_path / "src" / "written.py").exists()         # applied silently
+
+
+# --- G4: TaskReport — structured end-of-task summary. After a turn that acted
+# (edit + run_tests + finish), the rendered report must surface the edited file
+# path and the test entry. A pure-prose REPLIED turn with NO tool events must
+# NOT emit a report block (avoids noise on simple Q&A). ----------------------
+
+def test_chat_report_shown_after_edit_runtests_finish(tmp_path):
+    _repo(tmp_path)
+    script = [
+        "Reading foo.\nACTION: read_file\nPATH: src/foo.py\n",
+        "Fixing it.\n" + EDIT,
+        "Verifying.\n" + RT,
+        "Done.\n" + FIN,
+    ]
+    lines = iter(["make the test pass", "/exit"])
+    r, pres = _runner(tmp_path, script, lines)
+    r.run(str(tmp_path), accept=None)
+    text = pres.out.getvalue()
+    assert "=== task report ===" in text          # report emitted at FINISH
+    assert "outcome: FINISH" in text
+    assert "src/foo.py" in text                    # edited file surfaced
+    assert "tests/test_foo.py::test_add" in text   # test entry surfaced
+    assert "test green" in text                    # Finish reason -> summary
+
+
+def test_chat_no_report_on_pure_prose_reply(tmp_path):
+    # A pure-prose REPLIED turn with no file/shell/test events must NOT emit a
+    # report block. The report is for task turns that DID something.
+    _repo(tmp_path)
+    script = [
+        "I can read and edit files. What do you need?",  # pure prose, NO ACTION
+        "Done.\nACTION: finish\nREASON: read it\n",
+    ]
+    lines = iter(["what can you do?", "/exit"])
+    r, pres = _runner(tmp_path, script, lines)
+    r.run(str(tmp_path), accept=None)
+    text = pres.out.getvalue()
+    # The REPLIED turn (first) had no events -> no report block. Only the later
+    # FINISH turn (also no file/shell/test events) might or might not show one,
+    # but the FIRST turn's reply must NOT carry a report. We assert the prose is
+    # shown and that there is at most the FINISH-turn report. The key contract:
+    # a REPLIED turn never prints "outcome: REPLIED".
+    assert "I can read and edit files" in text
+    assert "outcome: REPLIED" not in text

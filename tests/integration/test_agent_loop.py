@@ -230,3 +230,36 @@ def test_diff_preview_ask_failclosed_skips_write(tmp_path):
     assert not (tmp_path / "src" / "newmod.py").exists()  # skipped, not written
     decisions = [t.decision for t in r.turns]
     assert "Deny" in decisions  # unapproved write recorded as a Deny turn
+
+
+# --- G4: TaskReport mirrored into the batch (fix) loop. run() must collect the
+# same tool events and attach a structured report to RunResult (no presenter in
+# batch mode, so the report rides on the result object). ---------------------
+
+def test_run_attaches_report_with_files_and_tests(tmp_path):
+    _repo(tmp_path, "return a - b")
+    r = _runner(tmp_path, [RT, EDIT, RT, FIN]).run(
+        Task(str(tmp_path), "tests/test_foo.py::test_add")
+    )
+    assert r.outcome == "SUCCESS"
+    report = r.report
+    assert report["outcome"] == "SUCCESS"
+    # the edit was applied -> edited file surfaced, deduped
+    assert report["files_changed"] == ["src/foo.py"]
+    # at least one test run, the last of which went green
+    assert any(t["green"] for t in report["tests"])
+    assert any(
+        t["selector"] == "tests/test_foo.py::test_add" for t in report["tests"]
+    )
+
+
+def test_run_report_empty_when_no_tool_events(tmp_path):
+    # Finish immediately, no edits/shell/tests -> empty lists, summary passthrough.
+    _repo(tmp_path, "return a - b")
+    r = _runner(tmp_path, [FIN]).run(
+        Task(str(tmp_path), "tests/test_foo.py::test_add")
+    )
+    report = r.report
+    assert report["files_changed"] == []
+    assert report["commands_run"] == []
+    assert report["tests"] == []
