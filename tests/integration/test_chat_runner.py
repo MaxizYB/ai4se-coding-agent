@@ -34,6 +34,10 @@ def _runner(tmp_path, script, lines, *, hitl=None, dangerous_patterns=None, sand
         dangerous_patterns if dangerous_patterns is not None else [r"rm\s+-rf?"]
     )
     cfg.network_commands = ["pip install"]
+    # G3: these scenarios test the feedback/sandbox/accept loops (not diff
+    # approval) under a fail-closed approver; opt out of the write-before-apply
+    # gate so writes still apply. Tests exercising the gate pass diff_preview=.
+    cfg.diff_preview = "never"
     for k, v in overrides.items():
         setattr(cfg, k, v)
     mem = MemoryStore(str(tmp_path / "n"), str(tmp_path / "l"))
@@ -257,3 +261,62 @@ def test_sandbox_gate_denies_dangerous_shell_safe_shell_and_out_of_root_write(tm
     # (3) tests/x.py was NOT written (sandbox denied the out-of-root write).
     assert not (tmp_path / "tests" / "x.py").exists()
     assert rc == 0  # Finish after the denies -> FINISH -> rc 0
+
+
+# --- G3: DiffPreviewer + approval gate (write-before-apply). In "ask" mode the
+# approver decides; a deny skips the write (file unchanged). "never" applies
+# silently and NEVER consults the approver (proven by wiring a denying one). ---
+
+WRITE = (
+    "ACTION: write_file\nPATH: src/written.py\n<<<\n"
+    "def g():\n    return 9\n>>>\n"
+)
+
+
+def test_chat_diff_preview_ask_stub_approve_applies(tmp_path):
+    _repo(tmp_path)
+    script = ["Writing.\n" + WRITE, "bye.\n" + FIN]
+    lines = iter(["write a module", "/exit"])
+    r, pres = _runner(
+        tmp_path, script, lines,
+        hitl=HITL(StubApprover(True)),
+        diff_preview="ask",
+    )
+    r.run(str(tmp_path), accept=None)
+    text = pres.out.getvalue()
+    assert "proposed change: src/written.py" in text           # diff shown
+    assert (tmp_path / "src" / "written.py").exists()          # applied
+    assert "return 9" in (tmp_path / "src" / "written.py").read_text()
+
+
+def test_chat_diff_preview_ask_stub_deny_skips(tmp_path):
+    _repo(tmp_path)
+    script = ["Writing.\n" + WRITE, "bye.\n" + FIN]
+    lines = iter(["write a module", "/exit"])
+    r, pres = _runner(
+        tmp_path, script, lines,
+        hitl=HITL(StubApprover(False)),
+        diff_preview="ask",
+    )
+    r.run(str(tmp_path), accept=None)
+    text = pres.out.getvalue()
+    assert "proposed change: src/written.py" in text           # diff shown before ask
+    assert not (tmp_path / "src" / "written.py").exists()      # NOT applied
+    assert "skipped" in text                                   # skip surfaced explicitly
+
+
+def test_chat_diff_preview_never_applies_silently_without_asking(tmp_path):
+    # "never" must NOT consult the approver at all: wire a DENYING approver and
+    # prove the write still lands + no diff is shown.
+    _repo(tmp_path)
+    script = ["Writing.\n" + WRITE, "bye.\n" + FIN]
+    lines = iter(["write a module", "/exit"])
+    r, pres = _runner(
+        tmp_path, script, lines,
+        hitl=HITL(StubApprover(False)),
+        diff_preview="never",
+    )
+    r.run(str(tmp_path), accept=None)
+    text = pres.out.getvalue()
+    assert "proposed change" not in text                      # no preview shown
+    assert (tmp_path / "src" / "written.py").exists()         # applied silently

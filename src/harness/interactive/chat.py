@@ -1,5 +1,6 @@
 from harness.actions.parser import ParseError, split_prose_and_action
-from harness.actions.protocol import Finish, RunTests
+from harness.actions.protocol import EditFile, Finish, RunTests, WriteFile
+from harness.governance.diff_preview import DiffPreviewer
 from harness.guardrails.guardrail import Allow, AskHuman, Deny
 from harness.guardrails.sandbox import Containerize
 from harness.interactive.presenter import Presenter
@@ -130,6 +131,29 @@ class ChatRunner:
                     Message("user", f"action denied: {decision.reason}; try a different approach.")
                 )
                 continue
+            # G3: DiffPreviewer + approval gate (write-before-apply). Shows the
+            # proposed unified diff for Write/Edit and (in "ask" mode) requires
+            # approval BEFORE the dispatcher mutates disk. "always" shows then
+            # applies; "never" applies silently (and never asks). Runs AFTER the
+            # sandbox Allow so a sandbox Deny wins and no preview leaks for a
+            # disallowed write. Under a non-interactive approver "ask" is
+            # fail-closed: the request returns Deny -> skip.
+            if isinstance(action, (WriteFile, EditFile)) and self.config.diff_preview != "never":
+                dpath, ddiff = DiffPreviewer.preview(action, self.config.project_root)
+                if ddiff:
+                    self.presenter.show_diff(dpath, ddiff)
+                    if self.config.diff_preview == "ask":
+                        verdict = self.hitl.request(action, f"proposed change to {dpath}; approve?")
+                        if isinstance(verdict, Deny):
+                            self.presenter.show_deny(f"skipped: not approved ({dpath})")
+                            history.append(Message("assistant", raw))
+                            history.append(
+                                Message(
+                                    "user",
+                                    f"change to {dpath} not approved; try a different approach.",
+                                )
+                            )
+                            continue
             # Fix A: Finish is a TERMINAL signal — handle it BEFORE dispatch.
             # The ToolDispatcher has no Finish case (its catch-all would emit
             # "unknown action Finish"); never dispatch Finish.

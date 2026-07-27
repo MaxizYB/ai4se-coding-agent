@@ -32,6 +32,10 @@ def _runner(tmp_path, script, **overrides):
     cfg.project_root = str(tmp_path)
     cfg.dangerous_shell_patterns = [r"rm\s+-rf?"]
     cfg.network_commands = ["pip install"]
+    # G3: opt out of the write-before-apply gate for the batch feedback-loop
+    # scenarios (they run under FailClosedApprover and are not about approval);
+    # the dedicated diff-gate test overrides this to "ask".
+    cfg.diff_preview = "never"
     for k, v in overrides.items():
         setattr(cfg, k, v)
     mem = MemoryStore(str(tmp_path / "n"), str(tmp_path / "l"))
@@ -208,3 +212,21 @@ def test_finish_terminates_without_dispatching_to_tools(tmp_path):
         f"Finish was dispatched to ToolDispatcher (summary="
         f"{finish_turns[0].summary!r}); it must terminate without dispatch"
     )
+
+
+# --- G3: DiffGate mirrored into the batch (fix) loop. Non-interactive task mode
+# uses FailClosedApprover; diff_preview="ask" must therefore SKIP an unapproved
+# WriteFile (fail-closed: no mutation without approval). Mirrors the chat gate. ---
+
+def test_diff_preview_ask_failclosed_skips_write(tmp_path):
+    _repo(tmp_path, "return a - b")
+    WRITE = (
+        "ACTION: write_file\nPATH: src/newmod.py\n<<<\n"
+        "def helper():\n    return 42\n>>>\n"
+    )
+    r = _runner(tmp_path, [WRITE, FIN], diff_preview="ask").run(
+        Task(str(tmp_path), "tests/test_foo.py::test_add")
+    )
+    assert not (tmp_path / "src" / "newmod.py").exists()  # skipped, not written
+    decisions = [t.decision for t in r.turns]
+    assert "Deny" in decisions  # unapproved write recorded as a Deny turn

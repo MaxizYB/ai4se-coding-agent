@@ -32,3 +32,23 @@ def test_snapshot():
 def test_show_prose_empty_is_noop():
     out = io.StringIO(); Presenter(out=out).show_prose("")
     assert out.getvalue() == ""
+
+
+def test_show_diff_header_then_diff_text():
+    out = io.StringIO()
+    Presenter(out=out).show_diff(
+        "src/foo.py", "--- src/foo.py\n+++ src/foo.py\n@@ -1 +1 @@\n-old\n+new\n"
+    )
+    text = out.getvalue()
+    assert "proposed change: src/foo.py" in text  # header cites the path
+    assert "+++ src/foo.py" in text               # diff body present
+    assert "-old" in text and "+new" in text
+
+
+def test_show_diff_truncates_long_diff_to_about_2000_chars():
+    out = io.StringIO()
+    huge = "+x" * 5000 + "\n"  # ~10k chars of additions
+    Presenter(out=out).show_diff("a.py", huge)
+    text = out.getvalue()
+    assert "proposed change: a.py" in text
+    assert len(text) <= 2200  # truncated to ~2000 (+ header/newline slack)

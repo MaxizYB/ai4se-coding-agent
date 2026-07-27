@@ -32,3 +32,11 @@ denied_commands = ["rm\\s+-rf\\s+/", "mkfs", "dd\\s+.*\\bof=", ":\\(\\)\\s*\\{",
 write_roots = ["src"]
 containerize = false
 container_image = "python:3.11-slim"
+
+# Governance: write-before-apply diff preview + approval gate.
+#   diff_preview = "ask"    -> show the diff and require approval before write/edit
+#                              (fail-closed under a non-interactive approver)
+#              | "always"   -> show the diff then auto-apply (no prompt)
+#              | "never"    -> apply silently (no preview, no prompt)
+[governance]
+diff_preview = "ask"

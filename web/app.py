@@ -33,6 +33,10 @@ def index():
 def _runner(repo: str):
     cfg = Config.default()
     cfg.project_root = repo
+    # G3: this demo runs non-interactively under FailClosedApprover; the
+    # write-before-apply gate would otherwise deny every EditFile (no human to
+    # approve). Apply edits silently so the red->green showcase still completes.
+    cfg.diff_preview = "never"
     mem = MemoryStore(
         os.path.join(repo, "HARNESS.md"),
         os.path.join(repo, ".harness", "run.jsonl"),

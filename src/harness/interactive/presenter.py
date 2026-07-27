@@ -30,6 +30,12 @@ class Presenter:
     def show_deny(self, reason: str) -> None:
         self._write(f"  denied: {reason}")
 
+    def show_diff(self, path: str, diff: str) -> None:
+        # G3: write-before-apply preview. Header cites the target path; the diff
+        # body is capped so a giant diff cannot flood the terminal stream.
+        body = diff[:2000]
+        self._write(f"proposed change: {path}\n{body}")
+
     def show_done(self, reason: str) -> None:
         self._write(f"  done: {reason}")
 

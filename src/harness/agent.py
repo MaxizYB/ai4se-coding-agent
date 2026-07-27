@@ -3,8 +3,9 @@ import os
 from dataclasses import dataclass, field
 
 from harness.actions.parser import ParseError, parse_action
-from harness.actions.protocol import Finish, RunTests
+from harness.actions.protocol import EditFile, Finish, RunTests, WriteFile
 from harness.feedback.types import FailureReport
+from harness.governance.diff_preview import DiffPreviewer
 from harness.guardrails.guardrail import Allow, AskHuman, Deny
 from harness.guardrails.sandbox import Containerize
 from harness.types import Message
@@ -106,6 +107,22 @@ class AgentRunner:
                 elif isinstance(sbox, Containerize):
                     pass  # G5: route to SandboxDockerExecutor instead of the host dispatcher.
                 # Allow: fall through unchanged -> proceed to dispatch.
+            # G3: DiffGate (write-before-apply), mirrored from the chat loop. In
+            # batch/fix mode there is no presenter, so only "ask" matters: a
+            # non-interactive approver (FailClosedApprover) returns Deny for an
+            # unapproved Write/Edit -> recorded as a Deny turn below (fail-
+            # closed: no mutation without approval). "always"/"never" apply
+            # without asking here. Runs after the sandbox Allow (sandbox Deny wins).
+            if (
+                isinstance(decision, Allow)
+                and isinstance(action, (WriteFile, EditFile))
+                and self.config.diff_preview == "ask"
+            ):
+                dpath, ddiff = DiffPreviewer.preview(action, self.config.project_root)
+                if ddiff:
+                    verdict = self.hitl.request(action, f"proposed change to {dpath}; approve?")
+                    if isinstance(verdict, Deny):
+                        decision = verdict
             if isinstance(decision, Allow) and not isinstance(action, Finish):
                 # M3: Finish is a TERMINAL control action -- it must NOT be
                 # handed to ToolDispatcher (which has no Finish arm and would

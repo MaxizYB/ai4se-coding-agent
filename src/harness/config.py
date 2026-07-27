@@ -33,6 +33,11 @@ class Config:
     sandbox_write_roots: list[str] = field(default_factory=lambda: ["src"])
     sandbox_containerize: bool = False
     sandbox_container_image: str = "python:3.11-slim"
+    # G3: DiffPreviewer/DiffGate — show a unified diff and (optionally) require
+    # approval before Write/Edit lands. "ask" prompts (fail-closed under a
+    # non-interactive approver); "always" shows then auto-applies; "never"
+    # applies silently. Default "ask" is the safe choice for a general agent.
+    diff_preview: str = "ask"
 
     @classmethod
     def default(cls) -> "Config":
@@ -51,6 +56,7 @@ def load_config(path: str | None) -> Config:
     fb = data.get("feedback", {})
     ctx = data.get("context", {})
     sb = data.get("sandbox", {})
+    gov = data.get("governance", {})
     cfg.project_root = scope.get("project_root", cfg.project_root)
     cfg.allowed_write_dirs = scope.get("allowed_write_dirs", cfg.allowed_write_dirs)
     cfg.dangerous_shell_patterns = gr.get("dangerous_shell_patterns", cfg.dangerous_shell_patterns)
@@ -69,4 +75,5 @@ def load_config(path: str | None) -> Config:
     cfg.sandbox_write_roots = sb.get("write_roots", cfg.sandbox_write_roots)
     cfg.sandbox_containerize = sb.get("containerize", cfg.sandbox_containerize)
     cfg.sandbox_container_image = sb.get("container_image", cfg.sandbox_container_image)
+    cfg.diff_preview = gov.get("diff_preview", cfg.diff_preview)
     return cfg
