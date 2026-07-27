@@ -20,3 +20,15 @@ hint_history_lines = 8
 
 [context]
 max_history = 8
+
+# Sandbox: HARD execution-boundary gate (Guardrail asks a human; Sandbox says no
+# regardless). Writes must land under a write-root; denylisted commands never
+# run; network egress is gated by `network`.
+[sandbox]
+# network = "allowlist" | "offline" | "open"
+network = "allowlist"
+network_allow = []  # tools permitted without asking when network = "allowlist"
+denied_commands = ["rm\\s+-rf\\s+/", "mkfs", "dd\\s+.*\\bof=", ":\\(\\)\\s*\\{", ">\\s*/dev/sd", "sudo"]
+write_roots = ["src"]
+containerize = false
+container_image = "python:3.11-slim"
