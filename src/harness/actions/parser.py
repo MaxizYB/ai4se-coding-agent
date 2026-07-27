@@ -26,7 +26,7 @@ _ACTION_RE = re.compile(r"ACTION:\s*(?P<name>\w+)\b")
 
 _SIMPLE = {
     "read_file": lambda p: ReadFile(p["PATH"]),
-    "list_dir": lambda p: ListDir(p["PATH"]),
+    "list_dir": lambda p: ListDir(p.get("PATH", ".")),  # PATH optional — defaults to repo root (cwd)
     "run_shell": lambda p: RunShell(p["COMMAND"]),
     "run_tests": lambda p: RunTests(p.get("ARGS", "")),
     "finish": lambda p: Finish(p.get("REASON", "")),

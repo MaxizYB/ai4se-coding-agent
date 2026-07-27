@@ -69,7 +69,14 @@ class ToolDispatcher:
             )
             return ToolResult(r.returncode == 0, r.stdout, r.stderr, r.returncode)
         if isinstance(action, RunTests):
-            junit = os.path.join(self.config.project_root, ".harness", "junit.xml")
+            # Fix E: ABSOLUTE junit path. With a relative `project_root` (e.g.
+            # `examples/demo`), a relative junit path is resolved differently
+            # by pytest (relative to its cwd=project_root) vs the reader
+            # (relative to the harness process cwd) -> the junit file is never
+            # found -> FeedbackEngine falls back to stderr and misreads GREEN
+            # runs as UNKNOWN. Absolute path makes both agree. Mock tests used
+            # absolute `tmp_path` so never caught this.
+            junit = os.path.abspath(os.path.join(self.config.project_root, ".harness", "junit.xml"))
             os.makedirs(os.path.dirname(junit), exist_ok=True)
             args = action.args.split() if action.args else []
             out = self.test_runner(

@@ -78,7 +78,8 @@ class ChatRunner:
                 history.append(
                     Message(
                         "user",
-                        f"your last output was not a valid action: {e.reason}; emit one ACTION per turn.",
+                        f"your last output had a malformed action ({e.reason}). "
+                        "Re-emit ONE action with the correct format per the protocol above.",
                     )
                 )
                 if parse_failures >= self.config.max_parse_failures:
@@ -103,6 +104,12 @@ class ChatRunner:
                     Message("user", f"action denied: {decision.reason}; try a different approach.")
                 )
                 continue
+            # Fix A: Finish is a TERMINAL signal — handle it BEFORE dispatch.
+            # The ToolDispatcher has no Finish case (its catch-all would emit
+            # "unknown action Finish"); never dispatch Finish.
+            if isinstance(action, Finish):
+                self.presenter.show_done(action.reason)
+                return "FINISH"
             result = self.dispatcher.execute(action)
             self.presenter.show_action(action, result)
             obs = (result.stdout + "\n" + result.stderr)[-2000:]
@@ -120,9 +127,6 @@ class ChatRunner:
                     self.presenter.show_done(f"acceptance test green: {accept}")
                     return "SUCCESS"
                 continue
-            if isinstance(action, Finish):
-                self.presenter.show_done(action.reason)
-                return "FINISH"
             history.append(Message("assistant", raw))
             history.append(Message("user", "OBSERVATION:\n" + obs))
         return "BUDGET_EXHAUSTED"

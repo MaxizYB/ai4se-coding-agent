@@ -73,3 +73,12 @@ def test_edit_file_blocks_at_eof_without_trailing_newline():
         "<<<NEW\n    return 2\n>>>NEW"  # no trailing \n
     )
     assert parse_action(raw) == EditFile("a.py", "    return 1\n", "    return 2\n")
+
+
+def test_list_dir_without_path_defaults_to_cwd():
+    # Real LLMs emit bare `list_dir` (natural `ls` model). PATH must be
+    # optional (default repo root). Mock scripts always supplied PATH, so the
+    # strict requirement was invisible until live GLM omitted it.
+    from harness.actions.protocol import ListDir
+    assert parse_action("ACTION: list_dir\n") == ListDir(".")
+    assert parse_action("ACTION: list_dir\nPATH: src\n") == ListDir("src")

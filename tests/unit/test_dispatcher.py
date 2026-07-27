@@ -1,4 +1,11 @@
-from harness.actions.protocol import EditFile, ListDir, ReadFile, RunShell, WriteFile
+from harness.actions.protocol import (
+    EditFile,
+    ListDir,
+    ReadFile,
+    RunShell,
+    RunTests,
+    WriteFile,
+)
 from harness.config import Config
 from harness.tools.dispatcher import ToolDispatcher
 
@@ -33,3 +40,19 @@ def test_run_shell(tmp_path):
     d = ToolDispatcher(Config.default()); d.config.project_root = str(tmp_path)
     r = d.execute(RunShell("echo hello"))
     assert r.ok and "hello" in r.stdout
+
+
+def test_run_tests_captures_junit_with_relative_project_root(tmp_path, monkeypatch):
+    # Fix E: a RELATIVE project_root must still capture the junit XML. With a
+    # relative path, pytest (cwd=project_root) and the junit reader (process
+    # cwd) resolved the junit path differently -> file never found -> empty ->
+    # FeedbackEngine misread GREEN runs as UNKNOWN. Absolute tmp_path (all
+    # other tests) masked this. Caught only via live GLM smoke.
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_ok.py").write_text("def test_ok():\n    assert 1 == 1\n")
+    monkeypatch.chdir(tmp_path.parent)            # process cwd OUTSIDE the repo
+    d = ToolDispatcher(Config.default())
+    d.config.project_root = tmp_path.name          # RELATIVE repo path
+    r = d.execute(RunTests("tests/test_ok.py"))
+    assert r.ok                                    # green
+    assert "<testsuite" in r.junit_xml             # junit captured, not empty

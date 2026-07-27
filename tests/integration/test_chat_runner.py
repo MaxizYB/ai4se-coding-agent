@@ -171,3 +171,21 @@ def test_run_task_accept_not_verified_returns_1(tmp_path):
     assert rc == 1                      # accept never went green
     assert "not verified" in text       # explicit message citing the selector
     assert "tests/test_foo.py::test_add" in text
+
+
+def test_finish_terminates_without_dispatching(tmp_path):
+    # Fix A: Finish is a TERMINAL signal — must NOT reach the dispatcher.
+    # The ToolDispatcher's catch-all returns "unknown action Finish", which a
+    # real LLM sees as noise. The mock-driven suite missed this because mock
+    # scripts always emitted Finish after a green run_tests (which returned
+    # SUCCESS first, never exercising the Finish branch). The NEGATIVE
+    # assertion (`"unknown action" not in text`) is what makes this a real gate.
+    _repo(tmp_path)
+    script = ["I'm a coding agent here to help.\nACTION: finish\nREASON: answered\n"]
+    lines = iter(["who are you?", "/exit"])
+    r, pres = _runner(tmp_path, script, lines)
+    r.run(str(tmp_path), accept=None)
+    text = pres.out.getvalue()
+    assert "answered" in text           # Finish reason shown
+    assert "done" in text
+    assert "unknown action" not in text  # Finish was NOT dispatched

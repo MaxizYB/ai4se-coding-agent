@@ -26,7 +26,34 @@ KEY: VALUE            # PATH: ... / ARGS: ... / COMMAND: ... / REASON: ...
 <literal content>
 >>>TAG
 
-Read files freely to explore. After editing, run run_tests to verify. Emit finish when the task is complete. Emit exactly one action per turn.{accept}"""
+Exact examples (copy the format precisely):
+
+  ACTION: read_file
+  PATH: src/foo.py
+
+  ACTION: list_dir
+  PATH: src
+
+  ACTION: edit_file
+  PATH: src/foo.py
+  <<<OLD
+      return a - b
+  >>>OLD
+  <<<NEW
+      return a + b
+  >>>NEW
+
+  ACTION: run_tests
+  ARGS: tests/test_foo.py::test_add
+
+  ACTION: finish
+  REASON: task complete
+
+Rules:
+- PATH is REQUIRED for read_file/write_file/edit_file; OPTIONAL for list_dir (omit to list the repo root).
+- Prefer edit_file over write_file (targeted edits, not whole-file rewrites).
+- After editing, run run_tests to verify. Emit finish only when the task is truly complete.
+- Emit EXACTLY one action per turn. Plain prose with no ACTION ends your turn without acting.{accept}"""
 
 
 def locate_impl_module(test_path: str) -> str | None:
