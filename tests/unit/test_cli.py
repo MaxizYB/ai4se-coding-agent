@@ -95,3 +95,29 @@ def test_resolve_llm_getpass_eof_falls_through_to_env(tmp_path, monkeypatch):
     from harness.cli import _resolve_llm
 
     assert _resolve_llm() == ("llm", "glm-4.6", "sk-env-fallback")
+
+
+# #1: `harness task`/`harness fix` under the DEFAULT config (diff_preview="ask")
+# must still APPLY a WriteFile. Batch mode wires FailClosedApprover, so an
+# un-forced "ask" would deny every write and the agent loops until budget is
+# exhausted without mutating. The CLI forces diff_preview="never" in batch mode
+# (no human present to approve). Chat stays interactive and honors the config.
+def test_task_applies_write_under_default_config(tmp_path, monkeypatch):
+    from harness.llm.mock import MockLLMClient
+
+    monkeypatch.setenv("HOME", str(tmp_path))            # no credential store
+    monkeypatch.setenv("ZHIPU_API_KEY", "sk-fake")        # env fallback
+    monkeypatch.delenv("HARNESS_MASTER_PASSWORD", raising=False)
+    (tmp_path / "src").mkdir()
+    script = [
+        "Writing.\nACTION: write_file\nPATH: src/written.py\n<<<\ndef g():\n    return 1\n>>>\n",
+        "ACTION: finish\nREASON: done\n",
+    ]
+    monkeypatch.setattr("harness.llm.zhipu.ZhipuLLMClient", lambda *a, **kw: MockLLMClient(script))
+
+    rc = main(["task", "--repo", str(tmp_path), "--goal", "write a file"])
+
+    assert rc == 0
+    written = tmp_path / "src" / "written.py"
+    assert written.exists(), "batch WriteFile must APPLY under default config"
+    assert "return 1" in written.read_text()

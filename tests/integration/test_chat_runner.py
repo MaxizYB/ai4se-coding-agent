@@ -105,6 +105,21 @@ def test_slash_clear_and_exit(tmp_path):
     assert "cleared" in text and "bye" in text
 
 
+# #8: the `/tests` slash command must NOT bypass the sandbox gate. With
+# containerize on but no docker executor wired, it fails closed (denied) instead
+# of running on the host dispatcher.
+def test_slash_tests_routed_through_sandbox_gate(tmp_path):
+    _repo(tmp_path)
+    lines = iter(["/tests tests/test_foo.py", "/exit"])
+    r, pres = _runner(tmp_path, [], lines, sandbox_containerize=True)
+    # _runner wires Sandbox(cfg) but NO sandbox_docker -> containerize + no
+    # executor -> fail-closed (Deny), never reaching the host dispatcher.
+    r.run(str(tmp_path), accept=None)
+    text = pres.out.getvalue()
+    assert "denied" in text
+    assert "containerize" in text
+
+
 # --- C1: ChatRunner must route AskHuman through the injected HITL, never
 # through global input(). In task mode (FailClosedApprover) a dangerous
 # action must fail-closed WITHOUT prompting; in chat mode the injected
@@ -300,7 +315,9 @@ def test_chat_diff_preview_ask_stub_deny_skips(tmp_path):
     )
     r.run(str(tmp_path), accept=None)
     text = pres.out.getvalue()
-    assert "proposed change: src/written.py" in text           # diff shown before ask
+    # #6: do NOT print a proposed diff for a write that will be denied — show the
+    # diff only once the approver says yes. A denied write surfaces only "skipped".
+    assert "proposed change" not in text
     assert not (tmp_path / "src" / "written.py").exists()      # NOT applied
     assert "skipped" in text                                   # skip surfaced explicitly
 

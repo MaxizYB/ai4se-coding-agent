@@ -190,7 +190,10 @@ def test_chat_containerize_routes_run_shell_to_docker(tmp_path):
     assert not host.calls, "host dispatcher must not run a containerized action"
 
 
-def test_chat_no_docker_falls_back_to_host_dispatcher(tmp_path):
+def test_chat_containerize_failclosed_when_no_docker_executor(tmp_path):
+    # #5: when the Sandbox says Containerize but NO docker executor is wired, the
+    # loop MUST fail-closed (Deny + surface why) instead of silently falling back
+    # to the host dispatcher (which would bypass the requested hard isolation).
     script = [
         "run.\nACTION: run_shell\nCOMMAND: echo hi\n",
         "ACTION: finish\nREASON: done\n",
@@ -199,7 +202,8 @@ def test_chat_no_docker_falls_back_to_host_dispatcher(tmp_path):
     r.sandbox_docker = None  # simulate "Docker not configured"
     r.run_task(str(tmp_path), "run echo hi")
     assert not docker.runner.calls
-    assert host.calls, "without a docker executor the action must fall back to the host dispatcher"
+    assert not host.calls, "no executor -> MUST NOT run on host (fail-closed)"
+    assert "containerize requested" in r.presenter.out.getvalue()
 
 
 def test_agent_containerize_routes_run_shell_to_docker(tmp_path):
@@ -234,6 +238,46 @@ def test_agent_containerize_routes_run_shell_to_docker(tmp_path):
     )
     r.run(Task(str(tmp_path), "tests/t.py::test_a"))
     assert docker.runner.calls and not host.calls
+
+
+def test_agent_containerize_failclosed_when_no_docker_executor(tmp_path):
+    # #5: agent loop must also fail-closed when Containerize is requested but no
+    # executor is injected (do NOT silently run on the host).
+    from harness.agent import AgentRunner, Task
+    from harness.context.manager import ContextManager
+    from harness.feedback.engine import FeedbackEngine
+    from harness.guardrails.guardrail import Guardrail
+    from harness.guardrails.hitl import HITL, FailClosedApprover
+    from harness.guardrails.sandbox import Sandbox
+    from harness.llm.mock import MockLLMClient
+    from harness.memory.store import MemoryStore
+
+    (tmp_path / "src").mkdir()
+    c = Config.default()
+    c.project_root = str(tmp_path)
+    c.sandbox_containerize = True
+    c.diff_preview = "never"
+    mem = MemoryStore(str(tmp_path / "n"), str(tmp_path / "l"))
+    cm = ContextManager(c, mem)
+    host = RecordingDispatcher()
+    docker = SandboxDockerExecutor(c, runner=FakeRunner(FakeCompletedProcess(stdout="container-out\n")))
+    r = AgentRunner(
+        MockLLMClient(["run.\nACTION: run_shell\nCOMMAND: echo hi\n", "ACTION: finish\nREASON: done\n"]),
+        c,
+        host,
+        Guardrail(c),
+        HITL(FailClosedApprover()),
+        FeedbackEngine(c.test_timeout_s, c.stuck_repeat_n, c.stuck_no_progress_m, c.hint_history_lines),
+        cm,
+        sandbox=Sandbox(c),
+        sandbox_docker=docker,
+    )
+    r.sandbox_docker = None  # simulate "Docker not configured"
+    res = r.run(Task(str(tmp_path), "tests/t.py::test_a"))
+    assert not docker.runner.calls, "no executor -> MUST NOT run a container"
+    assert not host.calls, "no executor -> MUST NOT fall back to host (fail-closed)"
+    # The containerize-without-executor turn must be recorded as a Deny.
+    assert any(t.decision == "Deny" for t in res.turns)
 
 
 # --- cli wiring: SandboxDockerExecutor constructed only when containerize ----

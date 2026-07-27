@@ -116,7 +116,14 @@ class AgentRunner:
                 elif isinstance(sbox, AskHuman):
                     decision = self.hitl.request(action, sbox.reason)
                 elif isinstance(sbox, Containerize):
-                    use_docker = self.sandbox_docker is not None
+                    # G5: route to the hard-isolation executor when injected.
+                    # #5 fail-closed: Containerize was requested but no executor
+                    # is configured -> Deny, NEVER a silent host fallback (that
+                    # would bypass the requested isolation). Mirrors chat._gate.
+                    if self.sandbox_docker is not None:
+                        use_docker = True
+                    else:
+                        decision = Deny("containerize requested but no docker executor configured")
                 # Allow: fall through unchanged -> proceed to dispatch.
             # G3: DiffGate (write-before-apply), mirrored from the chat loop. In
             # batch/fix mode there is no presenter, so only "ask" matters: a

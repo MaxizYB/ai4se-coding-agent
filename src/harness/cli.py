@@ -46,6 +46,12 @@ def _cmd_fix(args):
     from harness.memory.store import MemoryStore
     from harness.tools.dispatcher import ToolDispatcher
     cfg = load_config(args.config); cfg.project_root = args.repo
+    # #1: batch mode has no human to approve a write. The default diff_preview
+    # ("ask") + FailClosedApprover would deny EVERY Write/Edit and the agent
+    # loops until budget is exhausted without mutating. Force "never" here so a
+    # batch run applies writes silently (matches pre-diff-gate behavior). Chat
+    # (_cmd_chat) stays interactive and honors the configured/default value.
+    cfg.diff_preview = "never"
     mem = MemoryStore(os.path.join(args.repo, "HARNESS.md"), os.path.join(args.repo, ".harness", "run.jsonl"))
     cm = ContextManager(cfg, mem)
     # I2: credential resolution is shared with the chat/task subcommands via
@@ -125,6 +131,8 @@ def _cmd_task(args):
     if llm is None:
         print("no credentials (run `harness init` or set ZHIPU_API_KEY)", file=sys.stderr); return 2
     cfg, disp, gr, fe, cm, sb, sde = _build_chat_components(args)
+    # #1: batch mode — force "never" (see _cmd_fix). No human approves here.
+    cfg.diff_preview = "never"
     runner = ChatRunner(llm, cfg, disp, gr, HITL(FailClosedApprover()), fe, cm, sandbox=sb, sandbox_docker=sde)
     return runner.run_task(args.repo, args.goal, accept=args.accept)
 

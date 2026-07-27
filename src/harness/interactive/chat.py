@@ -1,8 +1,15 @@
 from harness.actions.parser import ParseError, split_prose_and_action
-from harness.actions.protocol import EditFile, Finish, RunShell, RunTests, WriteFile
+from harness.actions.protocol import (
+    Action,
+    EditFile,
+    Finish,
+    RunShell,
+    RunTests,
+    WriteFile,
+)
 from harness.governance.diff_preview import DiffPreviewer
 from harness.governance.task_report import TaskReport
-from harness.guardrails.guardrail import Allow, AskHuman, Deny
+from harness.guardrails.guardrail import Allow, AskHuman, Deny, GuardrailDecision
 from harness.guardrails.sandbox import Containerize
 from harness.interactive.presenter import Presenter
 from harness.types import Message
@@ -120,30 +127,12 @@ class ChatRunner:
                 # report (avoids noise on simple Q&A); one that DID act shows it.
                 self._emit_report("REPLIED", prose)
                 return "REPLIED"
-            decision = self.guardrail.check(action)
-            if isinstance(decision, AskHuman):
-                # C1: route through the injected HITL (fail-closed in task
-                # mode, ConsoleApprover/StubApprover in chat) — NEVER through
-                # global input(). Mirrors AgentRunner.run (agent.py:92-93).
-                # §3.5 fail-closed: in non-interactive task mode a dangerous /
-                # network action is denied rather than hanging on a prompt.
-                decision = self.hitl.request(action, decision.reason)
-            # G2/G5: Sandbox — HARD execution-boundary gate. Runs ONLY after the
-            # soft guardrail (+HITL) allowed, so a guardrail Deny wins and the
-            # sandbox is never consulted for an already-denied action. A Deny
-            # here is handled identically to a guardrail Deny below. When the
-            # sandbox says Containerize and a SandboxDockerExecutor is injected,
-            # the RunShell/RunTests dispatch below routes to it (hard isolation).
-            use_docker = False
-            if self.sandbox is not None and isinstance(decision, Allow):
-                sbox = self.sandbox.check(action)
-                if isinstance(sbox, Deny):
-                    decision = sbox
-                elif isinstance(sbox, AskHuman):
-                    decision = self.hitl.request(action, sbox.reason)
-                elif isinstance(sbox, Containerize):
-                    use_docker = self.sandbox_docker is not None
-                # Allow: fall through unchanged -> proceed to dispatch.
+            # G2/G5: soft guardrail (+HITL) then HARD sandbox gate. Shared with
+            # the `/tests` slash command via _gate() so neither path can bypass
+            # the fence. When the Sandbox says Containerize and an executor is
+            # injected, use_docker is set so the dispatch below routes to it
+            # (hard isolation). Containerize WITHOUT an executor is fail-closed.
+            decision, use_docker = self._gate(action)
             if isinstance(decision, Deny):
                 self.presenter.show_deny(decision.reason)
                 history.append(Message("assistant", raw))
@@ -151,17 +140,14 @@ class ChatRunner:
                     Message("user", f"action denied: {decision.reason}; try a different approach.")
                 )
                 continue
-            # G3: DiffPreviewer + approval gate (write-before-apply). Shows the
-            # proposed unified diff for Write/Edit and (in "ask" mode) requires
-            # approval BEFORE the dispatcher mutates disk. "always" shows then
-            # applies; "never" applies silently (and never asks). Runs AFTER the
-            # sandbox Allow so a sandbox Deny wins and no preview leaks for a
-            # disallowed write. Under a non-interactive approver "ask" is
-            # fail-closed: the request returns Deny -> skip.
+            # G3: DiffPreviewer + approval gate (write-before-apply). In "ask"
+            # mode the diff is shown ONLY after the approver says yes (#6: do not
+            # print a proposed diff for a write that will be denied). "always"
+            # shows then applies; "never" applies silently (and never asks). Runs
+            # AFTER the sandbox Allow so a sandbox Deny wins and no preview leaks.
             if isinstance(action, (WriteFile, EditFile)) and self.config.diff_preview != "never":
                 dpath, ddiff = DiffPreviewer.preview(action, self.config.project_root)
                 if ddiff:
-                    self.presenter.show_diff(dpath, ddiff)
                     if self.config.diff_preview == "ask":
                         verdict = self.hitl.request(action, f"proposed change to {dpath}; approve?")
                         if isinstance(verdict, Deny):
@@ -174,6 +160,10 @@ class ChatRunner:
                                 )
                             )
                             continue
+                        # approved -> NOW reveal the diff being applied
+                        self.presenter.show_diff(dpath, ddiff)
+                    else:  # "always": show then auto-apply, no approval step
+                        self.presenter.show_diff(dpath, ddiff)
             # Fix A: Finish is a TERMINAL signal — handle it BEFORE dispatch.
             # The ToolDispatcher has no Finish case (its catch-all would emit
             # "unknown action Finish"); never dispatch Finish.
@@ -233,6 +223,37 @@ class ChatRunner:
         report = TaskReport.build(self.task_events, outcome, agent_summary)
         self.presenter.show_report(report)
 
+    def _gate(self, action: Action) -> tuple[GuardrailDecision, bool]:
+        """Soft guardrail (+HITL) then HARD sandbox gate. Shared by the agent
+        loop and the ``/tests`` slash command so neither path bypasses the fence.
+
+        Returns ``(decision, use_docker)``. C1: AskHuman routes through the
+        injected HITL (fail-closed in task mode, never global input()). G5:
+        Containerize + an injected executor sets ``use_docker=True``; Containerize
+        WITHOUT an executor is FAIL-CLOSED (Deny) — never a silent host fallback,
+        which would bypass the requested hard isolation (#5).
+        """
+        decision = self.guardrail.check(action)
+        if isinstance(decision, AskHuman):
+            decision = self.hitl.request(action, decision.reason)
+        use_docker = False
+        if self.sandbox is not None and isinstance(decision, Allow):
+            sbox = self.sandbox.check(action)
+            if isinstance(sbox, Deny):
+                decision = sbox
+            elif isinstance(sbox, AskHuman):
+                decision = self.hitl.request(action, sbox.reason)
+            elif isinstance(sbox, Containerize):
+                if self.sandbox_docker is not None:
+                    use_docker = True
+                else:
+                    # #5 fail-closed: hard isolation was requested but no
+                    # executor is configured. Deny + surface why; do NOT run on
+                    # the host (that would defeat the requested isolation).
+                    decision = Deny("containerize requested but no docker executor configured")
+            # Allow: fall through unchanged -> proceed to dispatch.
+        return decision, use_docker
+
     def _slash(self, cmd: str, history: list[Message]) -> bool:
         """Return True if the REPL should exit."""
         c = cmd.lower()
@@ -250,9 +271,21 @@ class ChatRunner:
             )
             return False
         if c.startswith("/tests"):
+            # #8: route through the SAME guardrail->sandbox gate as the agent
+            # loop (via _gate), so containerize/offline/write-root/fail-closed
+            # all apply. A Deny is surfaced and the host dispatcher is never
+            # reached for a gated-off run_tests.
             args = cmd[len("/tests"):].strip()
-            r = self.dispatcher.execute(RunTests(args))
-            self.presenter.show_action(RunTests(args), r)
+            action = RunTests(args)
+            decision, use_docker = self._gate(action)
+            if isinstance(decision, Deny):
+                self.presenter.show_deny(decision.reason)
+                return False
+            if use_docker:
+                r = self.sandbox_docker.run_tests(action)
+            else:
+                r = self.dispatcher.execute(action)
+            self.presenter.show_action(action, r)
             fb = self.feedback_engine.classify(r)
             self.presenter.show_feedback(fb)
             return False

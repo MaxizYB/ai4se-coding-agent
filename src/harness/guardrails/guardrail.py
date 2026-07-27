@@ -44,11 +44,27 @@ def _compile_net(net: str) -> re.Pattern:
     return re.compile(rf"\b{body}\b")
 
 
+def network_tool_match(cmd: str, network_tools: list[str]) -> str | None:
+    """Return the first network-tool phrase in ``network_tools`` that matches
+    ``cmd``, else ``None``.
+
+    Shared by the soft Guardrail and the HARD Sandbox so both apply the SAME
+    (strong) match: version-suffixed head (pip3, python3.12) + ``\\s+`` join
+    (so ``pip  install`` still matches ``pip install``). Word-bounded to avoid
+    false positives. DRY + consistent — the Sandbox is the hard boundary and
+    must be at least as strict as the Guardrail.
+    """
+    for net in network_tools:
+        if _compile_net(net).search(cmd):
+            return net
+    return None
+
+
 class Guardrail:
     def __init__(self, config: Config):
         self.config = config
         self._danger = [re.compile(p) for p in config.dangerous_shell_patterns]
-        self._network = [_compile_net(net) for net in config.network_commands]
+        self._network = config.network_commands
 
     def _in_scope(self, path: str) -> bool:
         root = os.path.realpath(self.config.project_root)
@@ -71,9 +87,10 @@ class Guardrail:
             for pat in self._danger:
                 if pat.search(cmd):
                     return AskHuman(f"dangerous command: {cmd}")
-            for net in self._network:
-                if net.search(cmd):
-                    return AskHuman(f"network/system command: {cmd}")
+            # Shared network matcher (see network_tool_match) — same strength as
+            # the Sandbox so a versioned tool can't slip past the soft gate.
+            if network_tool_match(cmd, self._network) is not None:
+                return AskHuman(f"network/system command: {cmd}")
             return Allow()
         if isinstance(action, RunTests):
             return Allow()

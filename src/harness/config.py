@@ -23,6 +23,8 @@ class Config:
     sandbox_denied_commands: list[str] = field(
         default_factory=lambda: [
             r"rm\s+-rf\s+/",
+            r"rm\s+-rf",
+            r"sed\s+-i",
             r"mkfs",
             r"dd\s+.*\bof=",
             r":\(\)\s*\{",
