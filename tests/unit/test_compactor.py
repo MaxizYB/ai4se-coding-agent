@@ -104,3 +104,32 @@ def test_else_branch_collapses_newlines_and_truncates():
     fact = body.splitlines()[0]
     assert "\n" not in fact
     assert len(fact) <= 80
+
+
+def test_fact_action_match_is_line_anchored_not_substring():
+    # M6: "ACTION:" appearing mid-line (e.g. quoted inside a FEEDBACK message)
+    # must NOT be mis-classified as a real action line.
+    cfg = _cfg(threshold=10, keep_recent=1)
+    content = "FEEDBACK: the docs say ACTION: finish ends the turn " + ("x" * 200)
+    history = [Message("user", content), Message("assistant", "kept")]
+    result = Compactor(cfg).maybe_compact(history)
+    body = result[0].content.split("[compacted history]\n", 1)[1]
+    fact = body.splitlines()[0]
+    assert fact.startswith("FEEDBACK:")      # treated as plain text, not an action
+    assert not fact.startswith("user: ")      # not given the action-fact prefix
+    assert "PATH=" not in fact                # no structured keys extracted
+
+
+def test_compacted_history_summary_preserved_on_recompaction():
+    # M3: when a prior [compacted history] summary ages into "old" and is
+    # re-compacted, it must NOT be crushed to the 80-char fact cap.
+    cfg = _cfg(threshold=10, keep_recent=1)
+    prior = "[compacted history]\n" + ("assistant: edit_file PATH=src/foo.py\n" * 5) + ("detail " * 60)
+    assert len(prior) > 500
+    history = [Message("system", prior), Message("user", "kept")]
+    result = Compactor(cfg).maybe_compact(history)
+    assert result[0].content.startswith("[compacted history]")
+    body = result[0].content.split("[compacted history]\n", 1)[1]
+    first_fact = body.splitlines()[0]
+    assert len(first_fact) > 80               # preserved well past the old 80 cap
+    assert "edit_file" in first_fact          # content actually preserved

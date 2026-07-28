@@ -28,6 +28,7 @@ max_iterations = 5
 test_timeout_s = 10
 [context]
 max_history = 4
+keep_recent = 2
 """
     with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as p:
         p.write(toml)
@@ -63,3 +64,22 @@ keep_recent = 3
     os.unlink(p.name)
     assert c.context_compact_threshold == 1234
     assert c.context_keep_recent == 3
+
+
+def test_load_rejects_keep_recent_plus_one_exceeding_max_history():
+    # I1 guard: keep_recent+1 (the compacted summary slot) must fit inside
+    # max_history, else the summary is silently dropped by the history bound.
+    import pytest
+
+    toml = """
+[context]
+max_history = 4
+keep_recent = 6
+"""
+    with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as p:
+        p.write(toml)
+    try:
+        with pytest.raises(ValueError):
+            load_config(p.name)
+    finally:
+        os.unlink(p.name)

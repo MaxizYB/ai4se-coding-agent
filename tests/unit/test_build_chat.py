@@ -133,3 +133,83 @@ def test_build_chat_non_file_mention_token_not_matched(tmp_path):
     msgs = cm.build_chat(str(tmp_path), None, history)
     joined = "\n".join(x.content for x in msgs)
     assert "<@" not in joined
+
+
+# --- C1/I3: @mention path traversal must not read outside the repo ---
+
+def test_build_chat_mention_dotdot_traversal_rejected(tmp_path):
+    # `@../../<secret>` must not escape the repo and inject outside content.
+    # Nest repo two levels deep so `../..` resolves to a REAL outside file.
+    repo = tmp_path / "work" / "repo"
+    repo.mkdir(parents=True)
+    (repo / "src").mkdir()
+    (repo / "src" / "foo.py").write_text("print('inside')\n")
+    secret = tmp_path / "hosts.conf"  # tmp_path/work/repo/../../hosts.conf == this
+    secret.write_text("TOP_SECRET_HOSTS\n")
+    m = MemoryStore(str(tmp_path / "n"), str(tmp_path / "l"))
+    cm = ContextManager(Config.default(), m)
+    history = [Message("user", "see @../../hosts.conf and @src/foo.py")]
+    msgs = cm.build_chat(str(repo), None, history)
+    joined = "\n".join(x.content for x in msgs)
+    assert "TOP_SECRET_HOSTS" not in joined          # no traversal read
+    assert "<@../../hosts.conf>" not in joined        # no injection slot
+    assert "<@src/foo.py>" in joined and "print('inside')" in joined  # valid still works
+
+
+def test_build_chat_mention_absolute_path_rejected(tmp_path):
+    # `@/abs/path` must not read an absolute path outside the repo.
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    outside = tmp_path / "outside.conf"
+    outside.write_text("ABS_SECRET\n")
+    m = MemoryStore(str(tmp_path / "n"), str(tmp_path / "l"))
+    cm = ContextManager(Config.default(), m)
+    history = [Message("user", f"see @{outside}")]
+    msgs = cm.build_chat(str(repo), None, history)
+    joined = "\n".join(x.content for x in msgs)
+    assert "ABS_SECRET" not in joined
+    assert "<@" not in joined
+
+
+def test_build_chat_mention_sibling_traversal_rejected(tmp_path):
+    # `@../sibling/x.yml` must not read a sibling dir outside the repo.
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (tmp_path / "sibling").mkdir()
+    (tmp_path / "sibling" / "x.yml").write_text("SIB_SECRET: 1\n")
+    m = MemoryStore(str(tmp_path / "n"), str(tmp_path / "l"))
+    cm = ContextManager(Config.default(), m)
+    history = [Message("user", "see @../sibling/x.yml")]
+    msgs = cm.build_chat(str(repo), None, history)
+    joined = "\n".join(x.content for x in msgs)
+    assert "SIB_SECRET" not in joined
+    assert "<@../sibling/x.yml>" not in joined
+
+
+# --- I2: @mention of a binary file must be skipped gracefully ---
+
+def test_build_chat_mention_binary_file_skipped(tmp_path):
+    # A binary PNG (contains a NUL byte) must not crash build_chat and must
+    # NOT be injected as garbled text.
+    (tmp_path / "pic.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\xfa\xfe\xffIEND")
+    m = MemoryStore(str(tmp_path / "n"), str(tmp_path / "l"))
+    cm = ContextManager(Config.default(), m)
+    history = [Message("user", "see @pic.png")]
+    msgs = cm.build_chat(str(tmp_path), None, history)  # no crash
+    joined = "\n".join(x.content for x in msgs)
+    assert "<@pic.png>" not in joined                    # skipped, no injection
+
+
+# --- I1: compaction summary must survive the max_history bound ---
+
+def test_build_chat_compaction_summary_survives_max_history_bound(tmp_path):
+    m = MemoryStore(str(tmp_path / "n"), str(tmp_path / "l"))
+    cm = ContextManager(Config.default(), m)
+    cm.config.context_compact_threshold = 50
+    cm.config.context_keep_recent = 6
+    cm.config.max_history = 4  # keep_recent+1 (7) > max_history (4) -> naive slice drops summary
+    history = [Message("assistant", "ACTION: edit_file\nPATH: src/a.py\n" + "x" * 100)]
+    history += [Message("user", f"turn{i} " + "y" * 20) for i in range(7)]  # 8 total
+    msgs = cm.build_chat("/repo", None, history)
+    joined = "\n".join(x.content for x in msgs)
+    assert "[compacted history]" in joined          # summary survived the bound

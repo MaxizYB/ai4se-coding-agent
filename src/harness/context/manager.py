@@ -138,6 +138,23 @@ class ContextManager:
         msgs.append(Message("user", "\n\n".join(body)))
         return msgs
 
+    def _read_file_text(self, path: str) -> str | None:
+        """Read a file as UTF-8 text, returning ``None`` if it is missing,
+        unreadable, or binary. Binary is detected via the classic NUL-byte
+        heuristic (a byte that never appears in UTF-8 source/config text);
+        non-UTF-8 bytes that survive are replaced so a marginal encoding
+        never crashes the caller. Used for both @mention pulls and the
+        AGENTS.md project-memory read (I2: never crash on binary / non-UTF-8).
+        """
+        try:
+            with open(path, "rb") as f:
+                raw = f.read()
+        except (OSError, ValueError):
+            return None
+        if b"\x00" in raw:  # binary heuristic
+            return None
+        return raw.decode("utf-8", errors="replace")
+
     def build(self, history: list[Message], last_feedback) -> list[Message]:
         if not history:
             msgs = [Message("system", _SYSTEM)]
@@ -171,15 +188,23 @@ class ContextManager:
             msgs.append(Message("system", "Project notes:\n" + notes))
         agents_path = os.path.join(repo, "AGENTS.md")
         if os.path.exists(agents_path):
-            try:
-                with open(agents_path) as f:
-                    agents_content = f.read()
-            except OSError:
-                agents_content = ""
+            agents_content = self._read_file_text(agents_path) or ""
             if agents_content:
                 msgs.append(Message("system", "Project memory (AGENTS.md):\n" + agents_content))
         history = Compactor(self.config).maybe_compact(history)
-        msgs += history[-self.config.max_history:]
+        # I1: GUARANTEE a compaction summary survives the max_history bound.
+        # After compaction history == [summary, *keep_recent]; if keep_recent+1
+        # exceeds max_history a naive `history[-max_history:]` drops the
+        # summary. Keep the summary slot plus up to max_history-1 recent turns.
+        if (
+            history
+            and history[0].role == "system"
+            and history[0].content.startswith("[compacted history]")
+        ):
+            keep_recent = max(self.config.max_history - 1, 0)
+            msgs += [history[0], *history[1:][-keep_recent:]]
+        else:
+            msgs += history[-self.config.max_history:]
         self._inject_mentions(msgs, repo)
         return msgs
 
@@ -208,14 +233,23 @@ class ContextManager:
                 if len(unique) >= max_files:
                     break
         injections: list[Message] = []
+        # C1/I3: confine every mention strictly under the repo root so that
+        # `@../sibling/x.yml`, `@/abs/path.conf`, or `@../../etc/hosts.conf`
+        # can never read (or inject) a file outside the repository.
+        root_real = os.path.realpath(repo)
         for mentioned in unique:
-            path = os.path.join(repo, mentioned)
-            if not (os.path.exists(path) and os.path.isfile(path)):
-                continue
+            if any(part == ".." for part in mentioned.split("/")):
+                continue  # explicit traversal segment — reject outright
+            full = os.path.realpath(os.path.join(root_real, mentioned))
             try:
-                with open(path) as f:
-                    text = f.read()
-            except OSError:
+                if os.path.commonpath([full, root_real]) != root_real:
+                    continue  # traversal or absolute path escapes the repo
+            except ValueError:
+                continue  # commonpath across different drives (Windows) — reject
+            if not (os.path.exists(full) and os.path.isfile(full)):
+                continue
+            text = self._read_file_text(full)  # I2: skip binary / non-UTF-8
+            if text is None:
                 continue
             if len(text) <= max_chars:
                 body = text

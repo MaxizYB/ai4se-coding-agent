@@ -93,4 +93,15 @@ def load_config(path: str | None) -> Config:
     cfg.sandbox_containerize = sb.get("containerize", cfg.sandbox_containerize)
     cfg.sandbox_container_image = sb.get("container_image", cfg.sandbox_container_image)
     cfg.diff_preview = gov.get("diff_preview", cfg.diff_preview)
+    # I1: a compaction summary (1 slot) plus the kept-recent turns must fit
+    # inside max_history, else the summary is silently dropped by the history
+    # bound. Reject this misconfiguration at load time (build_chat is also
+    # defensive).
+    if cfg.context_keep_recent + 1 > cfg.max_history:
+        raise ValueError(
+            "config: [context] keep_recent + 1 must be <= max_history "
+            f"(got keep_recent={cfg.context_keep_recent}, "
+            f"max_history={cfg.max_history}); the compaction summary would "
+            "not survive the history bound."
+        )
     return cfg

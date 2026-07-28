@@ -58,3 +58,9 @@ def test_grep_trims_line_to_cap(tmp_path):
     assert len(hits) == 1
     body = hits[0].split(": ", 1)[1]
     assert len(body) <= 160
+
+
+def test_grep_invalid_regex_returns_empty(tmp_path):
+    # M5: an invalid regex pattern must not raise re.error; return [] instead.
+    _write(tmp_path / "src" / "a.py", "something\n")
+    assert Retriever.grep("(unterminated", str(tmp_path)) == []

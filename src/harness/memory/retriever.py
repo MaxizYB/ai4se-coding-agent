@@ -84,7 +84,10 @@ class Retriever:
         ``"<relpath>:<lineno>: <line trimmed to 160 chars>"``. Walks the text
         file suffixes only; unreadable files are skipped.
         """
-        rx = re.compile(pattern)
+        try:
+            rx = re.compile(pattern)
+        except re.error:
+            return []  # M5: invalid regex — surface no hits, do not raise.
         hits: list[str] = []
         for path in _iter_files(root, _TEXT_SUFFIXES):
             try:
