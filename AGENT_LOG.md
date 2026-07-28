@@ -106,3 +106,20 @@ worktree `.worktrees/feedback-core`（`feat/feedback-core`）。每 task：新�
 - **brief 自相矛盾**：plan 的 prose 与 code/test 多处不一致（正则空格、测试计数、fixture 空格、缺 conftest）。实现者遵循 TDD 契约（test 为准）是对的；plan 文本应回修（少数已修，T2/T15 文本待补）。
 - **subagent-driven + 两阶段评审**有效：23 task 仅靠"新鲜 subagent + 评审 + fix loop"推进，每 PR 的 Critical 都由评审（而非实现者自报）抓住。
 - **Superpowers 七步是真脚手架**：brainstorming 逼问、writing-plans 接口契约、冷启动验证、subagent 隔离——每一步都产出了可验证的工程价值，而非形式。
+
+## Phase 9 — 治理深做 + 记忆/上下文深做 (autonomous overnight)
+
+### 治理深做 (feat/governance-deep-dim, 5 task + fix wave)
+- **Sandbox**(`guardrails/sandbox.py`):硬边界层——命令 denylist(硬拒)+ 网络 egress(offline/allowlist/open,默认 allowlist)+ FS 写范围(realpath,防 symlink)。`Containerize` 决策→可选 Docker 隔离(`sandbox_docker.py`:--network=none/--read-only/bind-mount,mock 测 argv)。
+- **DiffPreviewer + DiffGate**(`governance/diff_preview.py`):write/edit 前 unified diff 预览 + HITL 审批(ask/always/never);批处理模式 fail-closed 不阻塞(default never for fix/task)。
+- **TaskReport**(`governance/task_report.py`):结构化任务总结(files changed/commands/tests green/summary),终止时展示。
+- **评审发现并修**:Critical(batch 模式 diff_preview=ask+FailClosed 拒所有写→fix/task 损坏)、symlink bypass、网络正则弱、Containerize fail-open、/tests 绕门。全修。
+- live 验证:harness task 写文件→applied→TaskReport 展示。
+
+### 记忆/上下文深做 (feat/memory-context-deep-dim, 4 task + fix wave)
+- **Compactor**(`memory/compactor.py`):超阈值→旧轮压成结构化事实 system 消息(无 LLM,确定性),保留最近 K 轮。长对话不爆窗。
+- **AGENTS.md 自动载入**:build_chat 读 <repo>/AGENTS.md 进系统提示(项目记忆)。
+- **@mention 拉文件**:用户消息 `@src/foo.py`→内容注入上下文(有路径遍历防御 realpath+commonpath)。
+- **Retriever**(`memory/retriever.py`):自实现(ast 符号索引 + regex grep),stdlib,无框架。
+- **评审发现并修**:Critical(@mention 路径遍历→读仓库外文件→注入 LLM 上下文=沙箱读边界破)、binary 文件 UnicodeDecodeError 崩溃、max_history 切掉压缩摘要。全修。
+- 最终:234 测试全绿,真模型端到端验证通过。
