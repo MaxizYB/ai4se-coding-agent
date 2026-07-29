@@ -1,0 +1,80 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "harness chat (demo, interactive)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "harness.cli",
+            "args": ["chat", "--repo", "examples/demo"],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            },
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "harness chat (current repo)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "harness.cli",
+            "args": ["chat", "--repo", "."],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            },
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "harness task (one-shot fix)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "harness.cli",
+            "args": [
+                "task", "--repo", "examples/demo",
+                "--goal", "修复 add 函数返回两数之和",
+                "--accept", "tests/test_foo.py::test_add"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            },
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "pytest (current file, verbose)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["${file}", "-v", "-s", "-m", "not live"],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            },
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "pytest (full suite, offline)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["-m", "not live", "-W", "error"],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            },
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Python: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            },
+            "justMyCode": false
+        }
+    ]
+}

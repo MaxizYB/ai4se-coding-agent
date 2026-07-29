@@ -28,7 +28,6 @@ htmlcov/
 # OS / editors
 .DS_Store
 .idea/
-.vscode/
 
 # git worktrees (local isolation)
 .worktrees/

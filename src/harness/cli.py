@@ -152,3 +152,8 @@ def main(argv=None) -> int:
     pt.add_argument("--config", default=None); pt.set_defaults(func=_cmd_task)
     args = p.parse_args(argv)
     return args.func(args)
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())
