@@ -14,13 +14,21 @@ A **conversational coding agent** (Claude/Codex-style CLI): you describe a task 
 
 Requires **Python ≥ 3.11** (uses stdlib `tomllib`).
 
-```bash
-# dev install (kernel + tests + lint; offline, no heavy deps)
-pip install -e ".[dev]"
+**Recommended: use a virtual environment** (avoids polluting system Python / PEP-668):
 
-# full install (adds fastapi/uvicorn/httpx for the WebUI + real-LLM client)
+```bash
+python3 -m venv .venv && source .venv/bin/activate    # create + activate venv
+
+# from GitHub Release (wheel):
+pip install https://github.com/MaxizYB/ai4se-coding-agent/releases/download/v1.0.0/harness-0.1.0-py3-none-any.whl
+
+# or from source (clone + editable):
+git clone https://github.com/MaxizYB/ai4se-coding-agent.git
+cd ai4se-coding-agent
 pip install -e ".[full,dev]"
 ```
+
+`[full]` adds fastapi/uvicorn/httpx (for the WebUI + real-LLM client); `[dev]` adds pytest/ruff.
 
 Core dependency is `cryptography` (for the credential store). FastAPI/uvicorn/httpx are only needed for the WebUI and the real GLM client.
 
