@@ -1,10 +1,12 @@
 # harness — a self-coded Coding Agent Harness
 
-A **TDD red-green fixer**: given a repository and a failing `pytest` test, the harness autonomously loops — read files → decide one action → parse it → gate it → execute it → run tests → classify the failure → feed a strategy hint back — until the test goes green or an objective termination condition trips.
+A **conversational coding agent** (Claude/Codex-style CLI): you describe a task in natural language, the agent freely reads/edits files, runs shell commands and tests, self-corrects from test feedback, and asks before dangerous actions — all driven by a self-coded harness kernel around an LLM.
 
-> **Agent = LLM + Harness.** The LLM only ever emits raw chat-completion text. Everything else — action parsing, governance, tool dispatch, deterministic feedback classification, context management, termination — is **self-coded Python**. Swap in a `MockLLMClient` and the whole machine runs offline, deterministically, with zero network (§A.4-C).
+> **Agent = LLM + Harness.** The LLM only ever emits raw chat-completion text. Everything else — action parsing, governance (sandbox + diff preview), tool dispatch, deterministic feedback classification, context management (compaction + retrieval), task reporting — is **self-coded Python**. Swap in a `MockLLMClient` and the whole machine runs offline, deterministically, with zero network (§A.4-C).
 
-This is the AI4SE final project (Project A · Coding Agent Harness). Deep dimension: **the feedback loop** (junit → failure taxonomy → strategy → stuck detection).
+**Three deep dimensions**: feedback loop (junit → taxonomy → strategy → stuck) + governance (sandbox + diff preview + task report) + memory/context (compaction + retrieval + @mention).
+
+**Download**: [GitHub Release v1.0.0](https://github.com/MaxizYB/ai4se-coding-agent/releases/tag/v1.0.0)
 
 ---
 
