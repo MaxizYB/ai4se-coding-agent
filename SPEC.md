@@ -113,6 +113,41 @@
 - 边界:复用内核全部组件;本轮不做 token 流式与跨会话 /resume。
 - 错误:ParseError 回灌(连续超限→ERROR);子件异常记日志。
 
+### 3.12 `Sandbox`（执行级硬沙箱，治理深做）
+- `src/harness/guardrails/sandbox.py`。在 Guardrail(问人)之上、dispatcher 执行之前，强制**硬边界**(无论如何不许的层)。
+- 三条边界(全配置驱动、确定性、mock 可单测):
+  - **命令 denylist**：`sandbox.denied_commands` 正则 → `Deny`（不问不跑）。默认：`rm -rf /`/`mkfs`/`dd of=`/fork bomb/`sudo`。
+  - **网络 egress**：`sandbox.network` ∈ `offline`/`allowlist`/`open`（默认 `allowlist`）。命中网络工具集(`curl`/`wget`/`pip install`/`git push`…)且不在 `network_allow` 白名单 → `offline` 硬拒 / `allowlist` 问人。
+  - **FS 写范围**：`sandbox.write_roots`（默认 `["src"]`），用 `os.path.realpath` 防 symlink 绕过，越界写硬拒。
+- `Sandbox.check(action) -> Allow | Deny | AskHuman | Containerize`。
+- 可选 `Containerize` → `SandboxDockerExecutor`（§3.13）：`sandbox.containerize=true` 时，命令在 `docker run --rm --network=none --read-only --tmpfs /tmp -v <repo>:/work` 里跑（真隔离）。
+- 与 Guardrail 的关系：Guardrail 管"问人"(scope fence + AskHuman)；Sandbox 管"无论如何不许"(denylist 硬拒 + 禁网 + write_roots)。三层防御：Guardrail → Sandbox → DiffGate。
+
+### 3.13 `SandboxDockerExecutor`（可选容器隔离）
+- `src/harness/guardrails/sandbox_docker.py`。`Sandbox.check` 返回 `Containerize` 时，由它替代 `ToolDispatcher` 执行。
+- `docker run --rm --network=none --read-only --tmpfs /tmp -v <repo>:/work -w /work <image> sh -c <cmd>`。禁网、系统只读、仅仓库可写。
+- 接口可注入 fake runner（mock 测 argv），真实 docker = opt-in 集成测。默认关。
+
+### 3.14 `DiffPreviewer` + `DiffGate`（写前预览审批，治理深做）
+- `src/harness/governance/diff_preview.py`。对 `WriteFile`/`EditFile` 在执行前计算 `difflib.unified_diff`，展示给用户审批。
+- `DiffPreviewer.preview(action, project_root) -> (path, unified_diff)`（纯函数）。
+- DiffGate(在 agent/chat 循环里，dispatcher 之外)：`config.diff_preview` = `ask`(交互审批)/`always`(展示后直接写)/`never`(静默)。批处理默认 `never`（避免 FailClosed 阻塞所有写）。
+- 非交互 + `ask` → fail-closed（不写）。
+
+### 3.15 `TaskReport`（结构化任务总结，治理深做）
+- `src/harness/governance/task_report.py`。agent/chat 循环维护 `task_events` 列表（file_changed/shell/test），终止时 `TaskReport.build(task_events, outcome, summary)` → `{outcome, files_changed, commands_run, tests[], summary}`。
+- `presenter.show_report` 渲染为用户可读的报告块。REPLIED（纯对话）+ 无事件时不显示报告。
+
+### 3.16 `Compactor`（对话压缩，记忆深做）
+- `src/harness/memory/compactor.py`。当历史 token 超 `context.compact_threshold`（默认 6000 chars），把旧轮压成一条 `[compacted history]` 结构化事实 system 消息（无 LLM，确定性），保留最近 `keep_recent`（默认 6）轮原文。
+- 每轮事实 = action 类型 + 路径 + 结果（从 turns 提取，非 AI 摘要）。纯函数，mock 可单测。
+- `ContextManager.build_chat` 在组装前调 `Compactor.maybe_compact(history)`。
+
+### 3.17 `Retriever` + `@mention` + AGENTS.md（按需检索 + 文件注入，记忆深做）
+- `src/harness/memory/retriever.py`：自实现符号索引（`ast` 扫 `.py` → `{name: [file:line]}`）+ grep（`re` 正则扫文件）。stdlib only，无框架（§A.4-D）。
+- `@mention`：`ContextManager.build_chat` 解析用户消息中 `@<path>` → 读文件内容注入上下文（`realpath` + `commonpath` 防遍历，bounded `mention_max_chars`）。
+- AGENTS.md：`build_chat` 自动载入 `<repo>/AGENTS.md`（标准项目记忆，类 CLAUDE.md）。
+
 ---
 
 ## 4. 系统架构
@@ -230,12 +265,19 @@ while not terminated:
 
 - **Red-green MVP**：fixture 仓 1 个失败测试，mock-LLM 下**确定性**到达 `SUCCESS`（集成测试断言）。
 - **反馈深做**：canned ENV/LOGIC/TIMEOUT/UNKNOWN 分类全对；`StrategyMap` hint 正确；重复签名/无进展 → `STUCK`（单测断言）。
-- **治理**：canned 危险 shell→`AskHuman`、越界写→`Deny`；非交互 fail-closed（单测断言）。
+- **治理**：canned 危险 shell→`AskHuman`(Guardrail)、硬拒 denylist→`Deny`(Sandbox)、越界写→`Deny`、symlink 绕过→`Deny`；非交互 fail-closed（单测断言）。
+- **治理深做 — Sandbox**：网络 `offline` 硬拒 `curl`；`allowlist` 问人；`write_roots` 防 `realpath` symlink；`Containerize` mock 测 argv（`--network=none`/`--read-only`）；fail-closed when no executor。
+- **治理深做 — DiffPreview**：`WriteFile`/`EditFile` 前 unified diff 计算（单测断言）；`StubApprover(True)` 放行 / `(False)` 跳过（集成测）。
+- **治理深做 — TaskReport**：feed canned events → 断言 files_changed 去重 + tests green/red + summary（单测）。
+- **记忆深做 — Compactor**：超阈值→1 条 system 摘要 + 保留 recent K（单测）；结构化事实含 action 类型（非 LLM 摘要）。
+- **记忆深做 — Retriever**：fixture 仓 `symbols()` 含 `add@src/foo.py`；`grep("assert")` 命中（单测）。
+- **记忆深做 — @mention**：`@src/foo.py`→内容注入；`@../../etc/passwd`→遍历防御拒绝（单测）。
 - **机制演示**（§A.6）：`scripts/mechanism_demo.py` 离线确定性复现 ①护栏拦截 ②注入失败→反馈改动作 ③深做维度逐类不同行为，退出码 0。
 - **凭据**：加解密 roundtrip；错主密码拒绝；磁盘无明文（`grep` 断言）。
 - **分发**：全新机 `docker build && docker run` 与 `pip install` 均可跑。
 - **WebUI**：提交→流式→终局+diff，公网 URL 可访问。
-- **CI**：`.gitlab-ci.yml` 的 `unit-test` job 绿 + 镜像构建；默认 pipeline 最后一次 pass。
+- **CI**：GitHub Actions `.github/workflows/ci.yml` 的 `unit-test` job 绿 + wheel 构建；默认 pipeline 最后一次 pass（[Actions](https://github.com/MaxizYB/ai4se-coding-agent/actions)）。
+- **分发**：[GitHub Release v1.0.0](https://github.com/MaxizYB/ai4se-coding-agent/releases/tag/v1.0.0)（wheel + sdist）；`docker build && docker run` 与 `pip install` 均可跑。
 - **离线可测**：默认测试集无网、mock-LLM 驱动整条 `AgentRunner`。
 - **对话式 REPL**（范围纠偏后招牌）：`harness chat` 在 mock-LLM + 假输入流下确定性走完 用户消息→(read/edit/run_tests/…→)Finish 往返;HITL `y` 放行/`n` 拦截;`/exit` `/clear` `/tests` 生效;`--accept` 绿即停。`AgentRunner.step()`、`ChatRunner`、Presenter、`split_prose_and_action` 均有 mock 单测(§A.4-C 不退化)。
 
@@ -243,14 +285,15 @@ while not terminated:
 
 ## 10. 风险与未决问题
 
-- **R1 · CI 文档不一致**：§4.8 写 GitHub Actions、§五.6 写 `.gitlab-ci.yml`+`unit-test` job。**决议**：以交付清单 §五.6 为准，提供 `.gitlab-ci.yml`（含 `unit-test` job + 镜像构建），GH Actions 作可选。
+- **R1 · CI 平台**：§五.6 原文写 `.gitlab-ci.yml`，助教确认用 **GitHub**。已替换为 `.github/workflows/ci.yml`（含 `unit-test` job + wheel 构建），`.gitlab-ci.yml` 已删除。
 - **R2 · WebUI scope 蔓延**：严守"纯展示层"，harness 逻辑只在库/CLI；时间盒控制。
 - **R3 · mock-LLM 不保证真实 GLM 守协议**：tolerant `ActionParser` + 解析失败回灌 + 一个 gated `@pytest.mark.live` 测试兜底。
 - **R4 · pytest 输出漂移**：用 junit XML（稳定）而非扒文本，已规避；仍保留 stderr 兜底。
 - **R5 · 容器 key 明文（env）**：README 标风险，建议生产用 secret mount；加密文件方案给非容器用法。
 - **R6 · 主密码遗忘**：无后门、不可恢复——first-run 明示，文档强调。
 - **R7 · Open Design 取舍**：当前定极简自写前端；若评审强调前端规范度，再切 Open Design（未决，低优）。
-- **U1（未决）**：`run_tests` 是否允许 agent 自改测试文件——当前 `scope.allowed_write_dirs` 含 `tests`，但策略上 agent 应只改 `src`。**暂定**：配置 `allowed_write_dirs=["src"]`，测试目录只读，防 agent 改测试"作弊"。
+- **U1（已决）**：`run_tests` 是否允许 agent 自改测试文件——当前 `scope.allowed_write_dirs` / `sandbox.write_roots` = `["src"]`，测试目录只读，防 agent 改测试"作弊"。
+- **R8 · mock 假绿（最重要的教训）**：234 个 mock-LLM 测试全绿，但真实 GLM 首次运行暴露 5 个 bug（write_file 格式、list_dir PATH、junit 相对路径、Finish 分发、对话轮次）；评审还发现 @mention 路径遍历、batch 模式 diff_preview 阻塞。**mock 测的是"agent 遵守协议"，不是"真实 LLM 遵守协议"**。已补充 live 冒烟测试 + 真模型端到端验证缓解，但这是 mock 驱动 TDD 的固有局限。
 
 ---
 
@@ -268,20 +311,35 @@ read_file / list_dir / write_file / edit_file / run_shell（治理）/ run_tests
 - **为什么把反馈做深**：它天然由代码构成、最契合 §A.4-C"换 mock 仍可确定性单测"，且是 §A.6 机制演示②的中心展品。
 
 ### 11.3 危险动作
-`Guardrail`（代码护栏）：范围围栏 + 危险 shell 正则 + 网络/装包命令 → `AskHuman`（交 `HITL` 状态机）；非交互 fail-closed。非提示词。
+**三层防御**（均为代码，非提示词）：
+- **Guardrail**（§3.5）：范围围栏 + 危险 shell 正则 + 网络/装包命令 → `AskHuman`（交 `HITL` 状态机）；非交互 fail-closed。
+- **Sandbox**（§3.12）：命令 denylist → 硬拒 `Deny`（不问人）；网络 egress `offline`/`allowlist` 控制；FS write_roots 用 `realpath` 防 symlink 绕过。
+- **DiffGate**（§3.14）：write/edit 前 unified diff + HITL 审批；批处理 fail-closed 不阻塞。
 
 ### 11.4 记忆
-`MemoryStore`（自实现，文件后端）：项目笔记（`HARNESS.md`，载入上下文）+ JSONL 运行日志（跨会话回放最近一条）。最低够用、可单测。
+**自实现（§A.4-D），不接框架 memory：**
+- `MemoryStore`（§3.8）：项目笔记（`HARNESS.md`，载入上下文）+ JSONL 运行日志（跨会话回放最近一条）。
+- `Compactor`（§3.16）：长对话超阈值→结构化摘要旧轮（无 LLM，确定性），保留最近 K 轮。防上下文窗口爆炸。
+- `Retriever`（§3.17）：stdlib `ast` 符号索引 + `re` grep 检索（按需定位，不全量载入）。
+- `@mention`（§3.17）：用户消息 `@path` → 文件内容注入上下文（`realpath` 防遍历，bounded）。
+- AGENTS.md 自动载入（§3.17）：标准项目记忆约定。
 
 ### 11.5 重点维度与理由
-**反馈闭环**为唯一最深贡献（taxonomy + 策略映射 + 卡住检测的机制密度）；`ContextManager` 升级为工程化投递层（选择/裁剪/强调/快照，皆可测）以保障反馈有效投递，但深度仍归反馈闭环。其余维度（决策/工具/治理/记忆/配置）保持可运行最低实现。
+**三个深做维度**（§A.4-D 要求"选一个深做"，本项目超额完成三个）：
 
-> **范围纠偏注**：招牌任务从"单测试 red-green 修复"扩为"对话式通用编码 agent"(§1.1/§3.11/US7)。这**不改变**深做维度——反馈闭环仍是 §A.2"据测试结果自我修正"的落点,只是在对话 REPL 里随时可用(`ChatRunner` 在 agent 跑 run_tests 时调用 `FeedbackEngine`,把分类+hint 经 Presenter 显示并回灌)。交互外壳(`ChatRunner`/Presenter/`step` 重构)是新增的展示与编排层,内核机制(可确定性 mock 单测)不退化。
+1. **反馈闭环（主要贡献）**：taxonomy + 策略映射 + 卡住检测的机制密度。是 §A.2"据测试结果自我修正"的落点，§A.6 机制演示②的中心展品。`ContextManager` 工程化投递层（选择/裁剪/强调/快照）保障反馈有效投递。
+2. **治理（第二深做）**：从 Guardrail(问人) 升级为三层防御——Sandbox(硬沙箱：denylist + 网络控制 + write_roots + 可选 Docker 真隔离) + DiffGate(写前 diff 审批) + TaskReport(结构化总结)。§A.4-D 点名"沙箱"。
+3. **记忆/上下文（第三深做）**：Compactor(结构化压缩，无 LLM，确定性) + Retriever(ast 符号索引 + grep，自实现) + @mention(按需拉文件) + AGENTS.md(项目记忆)。§A.3"按需提供给 LLM 而非全量载入"。
+
+三个维度均为**确定性代码机制**，换 mock LLM 后仍可单测（§A.4-C）。
 
 ### 11.6 机制如何编码（呼应 §A.4）
 - 反馈信号 = `FeedbackEngine`（解析→客观判定→回灌），确定性单测。
-- 危险拦截 = `Guardrail(action)`，传入构造动作即断言拦截，无需 LLM。
-- 工具分发 / 治理 / 反馈回灌 / 记忆读写 / 停机，均换 mock LLM 后可单测。
+- 危险拦截 = 三层防御：`Guardrail(action)` 问人 + `Sandbox(action)` 硬拒 + `DiffGate` 写前审批，传入构造动作即断言，无需 LLM。
+- 治理报告 = `TaskReport.build(task_events)`，feed canned events 断言。
+- 记忆压缩 = `Compactor.maybe_compact(history)`，超阈值→结构化摘要，纯函数。
+- 记忆检索 = `Retriever.symbols(root)` / `Retriever.grep(pattern, root)`，stdlib ast/re。
+- 工具分发 / 治理 / 反馈回灌 / 记忆读写 / 停机，均换 mock LLM 后可单测。234 测试全离线。
 
 ---
 
