@@ -39,3 +39,14 @@ jobs:
         with:
           name: harness-wheel
           path: dist/*.whl
+
+  docker-image:
+    runs-on: ubuntu-latest
+    needs: unit-test
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t harness:ci .
+      - name: Smoke test (key status)
+        run: docker run --rm harness:ci key status

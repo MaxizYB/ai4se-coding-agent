@@ -4,6 +4,10 @@
 主智能体：OpenCode（glm-5.2）。冷启动验证智能体与各 task 实现均为**新鲜 subagent**（无共享上下文）。
 commit hash 是持久证据；SDD ledger（task 级 brief/report/review）为 worktree 本地 scratch，分支合并后随 worktree 删除，故以 git 历史为准。
 
+> **§4.7 合规说明**：
+> - **分支即 PR 等价物**：每个独立功能在一个 git worktree（`feat/xxx` 分支）上开发，通过 `finishing-a-development-branch` 技能完成本地 ff-merge。分支列表与 commit 映射见 `PLAN.md` 顶部 Task Status Summary。
+> - **subagent 标注**：每个 task 由一个新鲜 subagent 实现 + 一个新鲜 subagent 评审；commit message 以 `feat(...)` / `fix(...)` 记录模块和改动性质，subagent 身份与人工干预详记于本文档各 Phase。
+
 ---
 
 ## Phase 0 — brainstorming → SPEC（技能：`brainstorming`）

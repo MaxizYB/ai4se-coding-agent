@@ -1,5 +1,41 @@
 # Coding Agent Harness Implementation Plan
 
+> **Task Status Summary** (§4.7: 每完成一个 task 即标记完成并附 commit hash)
+
+| Task | Module | Status | Commit |
+|------|--------|--------|--------|
+| T0 | Project bootstrap | ✅ done | `e12d37c` |
+| T1 | Action protocol (types) | ✅ done | `8c9897c` |
+| T2 | Action parser (text→Action) | ✅ done | `fa2727a`+`3cf1940` |
+| T3 | Feedback types + junit parser | ✅ done | `67ada5a` |
+| T4 | Failure classifier | ✅ done | `8c778a1` |
+| T5 | Strategy map | ✅ done | `d1e0a1b` |
+| T6 | Stuck detector | ✅ done | `33f6d7f` |
+| T7 | FeedbackEngine | ✅ done | `ab8711d`+`c70740c`..`1ccc551` |
+| T8 | Config | ✅ done | `f160521` |
+| T9 | Guardrail | ✅ done | `f7f4f01` |
+| T10 | HITL | ✅ done | `15743ee` |
+| T11 | CredentialStore | ✅ done | `41bad7c`+`54ce698` |
+| T12 | MemoryStore | ✅ done | `d4d9b13` |
+| T13 | Test runner | ✅ done | `df2afc9` |
+| T14 | ToolDispatcher | ✅ done | `cc1f7f9` |
+| T15 | ContextManager | ✅ done | `19935e5` |
+| T16 | LLMClient + Mock | ✅ done | `a81bb38` |
+| T17 | AgentRunner (★) | ✅ done | `fa39670`+`5f94c12`+`186e786`..`213d7f7` |
+| T18 | ZhipuLLMClient | ✅ done | `6a0f6bc` |
+| T19 | CLI | ✅ done | `13db363`+`5c6bc68` |
+| T20 | §A.6 mechanism demo | ✅ done | `d68552d`+`85a81e9` |
+| T21 | WebUI | ✅ done | `d6301cc`+`5de9c02` |
+| T22 | Docker + CI | ✅ done | `7828fc5`+`5de9c02` |
+| Chat-T1..T6 | Conversational CLI (split_prose/presenter/build_chat/ChatRunner/cli/docs) | ✅ done | `7b0aed2`..`b3cfd32` |
+| Gov-G1..G5 | Governance deep-dim (Sandbox/Diff/TaskReport/Docker) | ✅ done | `bed37f3`..`e03b134` |
+| Mem-M1..M4 | Memory deep-dim (Compactor/AGENTS.md/@mention/Retriever) | ✅ done | `18b9a7b`..`ab11b3c` |
+
+> Branches used as PR-equivalents (local ff-merge per `finishing-a-development-branch` skill):
+> `feat/feedback-core`, `feat/governance`, `feat/pr3`, `feat/pr4`, `feat/pr5`, `feat/chat`, `feat/governance-deep-dim`, `feat/memory-context-deep-dim`.
+> Subagent identity + human interventions documented in `AGENT_LOG.md`.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a self-coded Python Coding Agent Harness that autonomously fixes a failing pytest test (TDD red→green) via a deterministic feedback loop, with governance, credentials, mock-LLM unit tests, a thin WebUI, and Docker/PyPI distribution.
