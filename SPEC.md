@@ -102,8 +102,9 @@
 - 见 §12。
 
 ### 3.10 薄 WebUI（§五.9）
-- FastAPI：表单（仓库/测试选择器/预算）→ 后台跑 `AgentRunner` → SSE 流式推送每轮（动作/护栏判定/测试结果/失败类+hint）→ 终局 + edits diff；交互模式下 HITL 在 UI 弹审批。
-- 边界：纯展示层，不含 harness 逻辑；非交互（演示/CI）fail-closed。
+- FastAPI：浏览器任务输入 → 后台跑 `ChatRunner` → NDJSON 流式推送 prose、动作、护栏判定、测试反馈、diff、结构化任务报告与终局状态。
+- 模式：无 key 的 guided demo 使用 mock LLM，在每次请求的临时 fixture 副本中确定性完成 red→green；real 模式把一次请求交给 GLM-compatible client。
+- 部署边界：默认只允许 bundled demo、HTTPS 智谱 endpoint，demo 副本请求结束即清理；本地可信环境可用环境变量显式打开 custom repo/endpoint。Web 层不复制 harness 逻辑，非交互审批 fail-closed。
 
 ### 3.11 `ChatRunner`（对话式 REPL，范围纠偏后招牌，详见 design delta）
 - `harness chat [--repo PATH] [--accept TEST]`：多轮交互 REPL。用户自然语言输入(或 `/help`/`/exit`/`/clear`/`/tests`/`/status`)→ agent 内层循环(每轮 LLM 先述后做、抽 ACTION、治理拦截、执行、run_tests 时触发 FeedbackEngine 分类+纠错)→ Finish/预算/`--accept` 绿 即停回提示符。
@@ -255,9 +256,9 @@ while not terminated:
 | 结构化文本协议（非 tool-calling） | provider 无关、只用最底层 chat-completion（贴合 §A.4-A）；mock-LLM 极简；解析器本身是可单测机制（§A.4-C）。 |
 | Fernet 加密文件 | 全平台可跑（无 daemon）、自实现、确定性可测；容器用 env 退路。 |
 | Docker + PyPI | 全新机故事最强 + `pip install` 低成本辅。 |
-| FastAPI 薄 WebUI | 满足 §五.9 MUST；纯展示层不稀释内核深度。 |
+| FastAPI 薄 WebUI | 满足 §五.9 MUST；统一事件流可观察反馈/治理/报告，纯展示层不稀释内核深度。 |
 
-> 前端：加 WebUI 触发 §3.6 "前端推荐 Open Design"。本项目 WebUI 为极简演示面（流式日志 + HITL 弹窗），采用轻量自写前端（Jinja2 模板 + 少量原生 JS/SSE），在 SPEC 说明此选型；Open Design 留作可选增强，不作为必需。
+> 前端：加 WebUI 触发 §3.6 "前端推荐 Open Design"。本项目采用轻量自写前端（原生 HTML/CSS/JS + NDJSON 事件流），以运行工作台呈现 agent 对话、动作时间线、反馈、diff 与报告；不把 harness 逻辑复制进前端。
 
 ---
 

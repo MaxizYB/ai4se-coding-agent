@@ -127,3 +127,11 @@ worktree `.worktrees/feedback-core`（`feat/feedback-core`）。每 task：新�
 - **Retriever**(`memory/retriever.py`):自实现(ast 符号索引 + regex grep),stdlib,无框架。
 - **评审发现并修**:Critical(@mention 路径遍历→读仓库外文件→注入 LLM 上下文=沙箱读边界破)、binary 文件 UnicodeDecodeError 崩溃、max_history 切掉压缩摘要。全修。
 - 最终:234 测试全绿,真模型端到端验证通过。
+
+## Phase 10 — WebUI 继承与产品化收尾（2026-08-06）
+
+- **触发**：用户要求继承上一轮 AI 的未收尾优化，重点提升界面、功能完整度与部署可用性。
+- **审阅发现**：工作区中的 `web/app.py` 把 `web/presenter.py` 错误导入为 `harness.web.presenter`，导致 Web 测试在收集阶段失败；无 key 的新聊天路径使用空 mock 脚本，无法完成原先 README 承诺的 demo。
+- **人工实现**：重写 Web presentation adapter，统一 `/api/chat` NDJSON 事件流；补 demo mock red→green 脚本、输入校验、并发上限、HTTPS endpoint allowlist、custom repo 显式 opt-in、临时 fixture 隔离与异常清理。保留 `/run` 兼容接口。
+- **界面**：把原始聊天页改成响应式 control-room 工作台，展示 kernel 模块、运行统计、对话、动作、反馈、diff、task report，Settings 支持 demo/real 模式，所有动态文本使用 DOM `textContent`/转义。
+- **验证**：新增 WebUI 事件链、任意仓库拒绝、隔离 fixture 与 bundled demo 回归测试；离线套件 `238 passed`，`ruff check src tests scripts web` 通过。

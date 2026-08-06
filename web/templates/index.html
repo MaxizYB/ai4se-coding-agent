@@ -3,90 +3,266 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>harness — Coding Agent</title>
+  <meta name="theme-color" content="#101419">
+  <title>harness / coding agent</title>
   <style>
-    :root { --bg: #0d1117; --fg: #e6edf3; --dim: #8b949e; --acc: #58a6ff; --ok: #3fb950; --err: #f85149; --panel: #161b22; }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, 'Segoe UI', monospace; background: var(--bg); color: var(--fg); padding: 20px; max-width: 900px; margin: 0 auto; }
-    h1 { font-size: 1.4rem; margin-bottom: 4px; }
-    .sub { color: var(--dim); font-size: 0.85rem; margin-bottom: 16px; }
-    .card { background: var(--panel); border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-bottom: 12px; }
-    label { display: block; font-size: 0.8rem; color: var(--dim); margin-bottom: 4px; }
-    input, textarea { width: 100%; background: var(--bg); border: 1px solid #30363d; border-radius: 6px; color: var(--fg); padding: 8px 12px; font-size: 0.9rem; margin-bottom: 10px; }
-    input:focus, textarea:focus { border-color: var(--acc); outline: none; }
-    button { background: var(--acc); color: #fff; border: none; border-radius: 6px; padding: 8px 20px; font-size: 0.9rem; cursor: pointer; }
-    button:hover { opacity: 0.9; }
-    button:disabled { opacity: 0.5; cursor: wait; }
-    #out { white-space: pre-wrap; word-break: break-word; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.82rem; line-height: 1.5; max-height: 60vh; overflow-y: auto; }
-    .hint { color: var(--dim); font-size: 0.75rem; margin-top: 4px; }
-    .mode { display: flex; gap: 12px; margin-bottom: 10px; }
-    .mode label { display: flex; align-items: center; gap: 4px; font-size: 0.8rem; cursor: pointer; }
+    :root {
+      --ink: #e8edf2; --muted: #8a96a3; --faint: #5d6975;
+      --canvas: #0e1216; --panel: #151b21; --panel-2: #1b232b;
+      --line: #2a343e; --blue: #63a9ff; --cyan: #61d6c5;
+      --amber: #e7b35d; --coral: #f17872; --green: #72cf91;
+      --shadow: 0 18px 45px rgba(0, 0, 0, .22);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { margin: 0; color: var(--ink); background: var(--canvas); font: 14px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+    button, input, textarea { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+    .app { min-height: 100%; display: grid; grid-template-rows: 60px 1fr; }
+    .topbar { display: flex; align-items: center; gap: 18px; padding: 0 28px; border-bottom: 1px solid var(--line); background: rgba(21, 27, 33, .92); }
+    .brand { display: flex; align-items: center; gap: 10px; min-width: 220px; }
+    .brand-mark { width: 27px; height: 27px; display: grid; place-items: center; color: #0e1216; background: var(--cyan); border-radius: 7px; font-weight: 800; letter-spacing: 0; }
+    .brand-name { font-weight: 700; letter-spacing: .02em; }
+    .brand-sub { color: var(--muted); font-size: 12px; margin-left: 6px; }
+    .topbar-spacer { flex: 1; }
+    .connection { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+    .connection-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 0 4px rgba(97, 214, 197, .12); }
+    .top-action { border: 1px solid var(--line); color: var(--muted); background: transparent; padding: 7px 11px; border-radius: 6px; }
+    .top-action:hover { color: var(--ink); border-color: var(--blue); }
+
+    .workspace { min-height: 0; display: grid; grid-template-columns: 285px minmax(0, 1fr); }
+    .sidebar { min-height: 0; overflow-y: auto; padding: 27px 22px; border-right: 1px solid var(--line); background: #11171c; }
+    .eyebrow { color: var(--cyan); text-transform: uppercase; letter-spacing: .13em; font-size: 10px; font-weight: 700; }
+    .side-title { margin: 8px 0 19px; font-size: 21px; line-height: 1.2; letter-spacing: -.02em; }
+    .side-copy { color: var(--muted); font-size: 12px; line-height: 1.65; }
+    .side-section { margin-top: 29px; padding-top: 19px; border-top: 1px solid var(--line); }
+    .side-section h2 { margin: 0 0 13px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+    .capabilities { display: grid; gap: 10px; }
+    .capability { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
+    .capability-key { width: 23px; height: 23px; display: grid; place-items: center; color: var(--blue); background: rgba(99, 169, 255, .1); border: 1px solid rgba(99, 169, 255, .25); border-radius: 5px; font-size: 11px; font-weight: 700; }
+    .run-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .stat { border: 1px solid var(--line); padding: 10px; background: rgba(255,255,255,.015); }
+    .stat-value { display: block; font-size: 20px; font-weight: 650; }
+    .stat-label { color: var(--faint); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+    .side-note { margin-top: 23px; padding: 11px 12px; border-left: 2px solid var(--amber); color: var(--muted); background: rgba(231,179,93,.06); font-size: 11px; }
+
+    .main-column { min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; }
+    .conversation { overflow-y: auto; padding: 35px clamp(20px, 5vw, 76px) 28px; scroll-behavior: smooth; }
+    .conversation-inner { width: min(850px, 100%); margin: 0 auto; }
+    .welcome { padding: 22px 0 34px; }
+    .welcome h1 { max-width: 650px; margin: 10px 0 12px; font-size: clamp(28px, 4vw, 43px); line-height: 1.05; letter-spacing: -.035em; font-weight: 700; }
+    .welcome p { max-width: 620px; color: var(--muted); line-height: 1.7; }
+    .quick-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 25px; }
+    .quick-action { border: 1px solid var(--line); color: var(--ink); background: var(--panel); border-radius: 6px; padding: 9px 12px; text-align: left; }
+    .quick-action:hover { border-color: var(--blue); background: var(--panel-2); }
+    .quick-action small { display: block; color: var(--muted); margin-top: 3px; font-size: 11px; }
+
+    .message { display: flex; gap: 13px; margin: 0 0 22px; }
+    .message-avatar { flex: 0 0 28px; height: 28px; display: grid; place-items: center; border-radius: 7px; color: #0e1216; background: var(--blue); font-size: 11px; font-weight: 800; }
+    .message-agent .message-avatar { background: var(--cyan); }
+    .message-body { min-width: 0; flex: 1; }
+    .message-label { margin-bottom: 5px; color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .09em; }
+    .message-text { white-space: pre-wrap; word-break: break-word; line-height: 1.7; }
+    .message-user .message-text { color: #f3f7fb; }
+
+    .event { display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 12px; margin: 0 0 10px 41px; padding: 12px 14px; border: 1px solid var(--line); border-left: 2px solid var(--blue); background: rgba(21, 27, 33, .72); }
+    .event-marker { width: 7px; height: 7px; margin-top: 6px; border-radius: 50%; background: var(--blue); }
+    .event-head { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+    .event-title { color: var(--blue); font-weight: 700; }
+    .event-meta { color: var(--faint); font-size: 11px; }
+    .event-detail { margin-top: 5px; color: var(--muted); font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 130px; overflow: auto; }
+    .event.feedback { border-left-color: var(--amber); } .event.feedback .event-marker, .event.feedback .event-title { background: var(--amber); color: var(--amber); }
+    .event.denied, .event.error { border-left-color: var(--coral); } .event.denied .event-marker, .event.error .event-marker, .event.denied .event-title, .event.error .event-title { background: var(--coral); color: var(--coral); }
+    .event.done, .event.success { border-left-color: var(--green); } .event.done .event-marker, .event.success .event-marker, .event.done .event-title, .event.success .event-title { background: var(--green); color: var(--green); }
+    .event-title { background: none !important; }
+    .diff { margin: 0 0 12px 41px; border: 1px solid var(--line); background: #10161b; }
+    .diff-head { display: flex; justify-content: space-between; gap: 12px; padding: 10px 13px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+    .diff pre { margin: 0; padding: 12px 13px; overflow: auto; color: var(--muted); font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .diff .add { color: var(--green); } .diff .del { color: var(--coral); }
+    .report { margin: 17px 0 27px 41px; padding: 16px; border: 1px solid var(--cyan); background: rgba(97,214,197,.05); }
+    .report-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 13px; }
+    .report-title { font-weight: 700; }
+    .report-outcome { color: var(--green); font-size: 11px; font-weight: 800; letter-spacing: .1em; }
+    .report-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 11px; }
+    .report-field { min-width: 0; } .report-label { display: block; color: var(--faint); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; } .report-value { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+    .empty { color: var(--faint); }
+
+    .composer-wrap { padding: 0 clamp(20px, 5vw, 76px) 23px; }
+    .composer { width: min(850px, 100%); margin: 0 auto; }
+    .composer-box { display: flex; align-items: flex-end; gap: 11px; padding: 8px; border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+    .composer-box:focus-within { border-color: var(--blue); }
+    .composer textarea { min-height: 43px; max-height: 145px; flex: 1; resize: none; border: 0; outline: 0; color: var(--ink); background: transparent; padding: 10px 9px; line-height: 1.45; }
+    .composer textarea::placeholder { color: var(--faint); }
+    .send { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 7px; border: 0; border-radius: 5px; color: #0d1217; background: var(--cyan); padding: 10px 14px; font-weight: 700; }
+    .send:hover { filter: brightness(1.08); } .send:disabled { cursor: wait; opacity: .5; }
+    .composer-foot { display: flex; justify-content: space-between; gap: 10px; margin-top: 8px; color: var(--faint); font-size: 11px; }
+    .kbd { padding: 2px 5px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); }
+
+    dialog { width: min(620px, calc(100% - 28px)); border: 1px solid var(--line); color: var(--ink); background: var(--panel); padding: 0; box-shadow: var(--shadow); }
+    dialog::backdrop { background: rgba(0,0,0,.62); }
+    .settings-head { display: flex; justify-content: space-between; align-items: center; padding: 18px 20px; border-bottom: 1px solid var(--line); }
+    .settings-head h2 { font-size: 17px; } .close { border: 0; color: var(--muted); background: transparent; font-size: 20px; }
+    .settings-body { padding: 20px; } .field { margin-bottom: 17px; } .field:last-child { margin-bottom: 0; }
+    .field label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 12px; }
+    .field input { width: 100%; border: 1px solid var(--line); border-radius: 5px; color: var(--ink); background: var(--canvas); padding: 9px 10px; }
+    .field input:focus { border-color: var(--blue); outline: 0; }
+    .field-note { margin-top: 5px; color: var(--faint); font-size: 11px; }
+    .mode-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; padding: 4px; border: 1px solid var(--line); background: var(--canvas); }
+    .mode-switch label { margin: 0; padding: 8px 10px; text-align: center; border-radius: 3px; cursor: pointer; color: var(--muted); }
+    .mode-switch input { position: absolute; opacity: 0; pointer-events: none; } .mode-switch input:checked + span { display: block; color: var(--ink); background: var(--panel-2); }
+    .settings-foot { display: flex; justify-content: flex-end; padding: 13px 20px; border-top: 1px solid var(--line); }
+    .secondary { border: 1px solid var(--line); border-radius: 5px; color: var(--muted); background: transparent; padding: 8px 12px; }
+    .secondary:hover { color: var(--ink); border-color: var(--blue); }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    @media (max-width: 760px) {
+      .topbar { padding: 0 16px; gap: 10px; } .brand { min-width: 0; } .brand-sub { display: none; }
+      .workspace { display: block; } .sidebar { display: none; }
+      .conversation { padding: 24px 16px 22px; } .composer-wrap { padding: 0 16px 16px; }
+      .welcome h1 { font-size: 32px; } .event, .diff, .report { margin-left: 0; }
+      .report-grid { grid-template-columns: 1fr; } .connection { display: none; }
+    }
   </style>
 </head>
 <body>
-  <h1>harness — Coding Agent</h1>
-  <p class="sub">Agent = LLM + Harness. The LLM decides; everything else is code.</p>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">h</span><span class="brand-name">harness</span><span class="brand-sub">coding agent control room</span></div>
+      <span class="topbar-spacer"></span>
+      <span class="connection"><span class="connection-dot"></span><span id="connection-label">demo sandbox ready</span></span>
+      <button class="top-action" id="reset" type="button">New run</button>
+      <button class="top-action" id="open-settings" type="button">Settings</button>
+    </header>
 
-  <div class="card">
-    <div class="mode">
-      <label><input type="radio" name="mode" value="demo" checked onchange="document.getElementById('key-field').style.display='none'; document.getElementById('goal-field').style.display='none';"> Demo (mock LLM)</label>
-      <label><input type="radio" name="mode" value="real" onchange="document.getElementById('key-field').style.display='block'; document.getElementById('goal-field').style.display='block';"> Real LLM (GLM-4.6)</label>
+    <div class="workspace">
+      <aside class="sidebar" aria-label="Run overview">
+        <div class="eyebrow">Execution surface</div>
+        <h2 class="side-title">Observe the harness<br>at work.</h2>
+        <p class="side-copy">A deterministic kernel surrounds the model: every read, edit, command and test is governed, recorded and fed back into the next decision.</p>
+        <section class="side-section">
+          <h2>Active run</h2>
+          <p class="side-copy" id="run-mode">Guided demo / mock LLM</p>
+          <p class="side-copy" id="run-accept">Acceptance: tests/test_foo.py::test_add</p>
+        </section>
+        <section class="side-section">
+          <h2>Signals</h2>
+          <div class="run-stats"><div class="stat"><span class="stat-value" id="stat-actions">0</span><span class="stat-label">actions</span></div><div class="stat"><span class="stat-value" id="stat-tests">0</span><span class="stat-label">tests</span></div><div class="stat"><span class="stat-value" id="stat-files">0</span><span class="stat-label">files</span></div><div class="stat"><span class="stat-value" id="stat-feedback">0</span><span class="stat-label">feedback</span></div></div>
+        </section>
+        <section class="side-section">
+          <h2>Kernel modules</h2>
+          <div class="capabilities"><div class="capability"><span class="capability-key">FB</span>feedback classification</div><div class="capability"><span class="capability-key">GD</span>governance and sandbox</div><div class="capability"><span class="capability-key">MM</span>memory and retrieval</div><div class="capability"><span class="capability-key">TR</span>task report and diff</div></div>
+        </section>
+        <div class="side-note">Demo runs use a fresh temporary workspace. Your API key is used for one request and never stored by the browser.</div>
+      </aside>
+
+      <section class="main-column">
+        <main class="conversation" id="conversation" aria-live="polite"><div class="conversation-inner" id="thread">
+          <section class="welcome" id="welcome">
+            <div class="eyebrow">Agent = LLM + Harness</div>
+            <h1>From failing test to verified change.</h1>
+            <p>Try the guided run to see the feedback loop, scope fence, test execution and final report as they happen. Switch to a real model in Settings when you are ready to drive the same kernel with your own task.</p>
+            <div class="quick-actions"><button class="quick-action" type="button" data-prompt="Run the guided red-green demo"><strong>Run guided demo</strong><small>mock LLM / isolated fixture</small></button><button class="quick-action" type="button" data-prompt="Explain how the feedback loop works"><strong>Explain the feedback loop</strong><small>conversation / no file changes</small></button></div>
+          </section>
+        </div></main>
+        <div class="composer-wrap"><div class="composer">
+          <div class="composer-box"><label class="sr-only" for="input">Task</label><textarea id="input" rows="1" placeholder="Describe a coding task or ask about the harness..."></textarea><button class="send" id="send" type="button"><span aria-hidden="true">&#9654;</span> Send</button></div>
+          <div class="composer-foot"><span><span class="kbd">Enter</span> send <span class="kbd">Shift + Enter</span> new line</span><span id="composer-status">ready for a task</span></div>
+        </div></div>
+      </section>
     </div>
-
-    <div id="key-field" style="display:none">
-      <label>API Key (ZHIPU_API_KEY)</label>
-      <input type="password" id="key" placeholder="paste your GLM key — stays in browser, not stored">
-    </div>
-
-    <div id="goal-field" style="display:none">
-      <label>Task (natural language)</label>
-      <textarea id="goal" rows="2" placeholder="e.g. fix the add function to return a+b"></textarea>
-    </div>
-
-    <label>Acceptance test (pytest selector)</label>
-    <input id="test" value="tests/test_foo.py::test_add">
-    <button id="btn" onclick="runAgent()">Run</button>
-    <p class="hint">Demo mode: mock agent runs a scripted red→green loop. Real mode: GLM-4.6 drives the agent with your task.</p>
   </div>
 
-  <div class="card">
-    <div id="out">— output appears here —</div>
-  </div>
+  <dialog id="settings-dialog">
+    <div class="settings-head"><h2>Run settings</h2><button class="close" id="close-settings" type="button" aria-label="Close settings">&times;</button></div>
+    <div class="settings-body">
+      <div class="field"><label>Execution mode</label><div class="mode-switch"><label><input type="radio" name="mode" value="demo" checked><span>Guided demo</span></label><label><input type="radio" name="mode" value="real"><span>Real LLM</span></label></div><p class="field-note">Demo mode is offline and deterministic. Real mode sends the task and key to the configured provider for this run.</p></div>
+      <div class="field"><label for="key">API key <span class="field-note">(real mode only)</span></label><input id="key" type="password" autocomplete="off" placeholder="Paste a provider key"><p class="field-note">The UI does not persist this value. Prefer the CLI encrypted credential store for local work.</p></div>
+      <div class="field"><label for="model">Model</label><input id="model" value="glm-4.6" spellcheck="false"></div>
+      <div class="field"><label for="base_url">Provider base URL</label><input id="base_url" value="https://open.bigmodel.cn/api/paas/v4" spellcheck="false"></div>
+      <div class="field"><label for="accept">Acceptance test</label><input id="accept" value="tests/test_foo.py::test_add" spellcheck="false"><p class="field-note">The guided fixture uses this selector. Real runs stop when it turns green.</p></div>
+      <div class="field"><label for="repo">Local repository path <span class="field-note">(only when server opts in)</span></label><input id="repo" placeholder="Usually leave blank for the demo workspace" spellcheck="false"></div>
+    </div>
+    <div class="settings-foot"><button class="secondary" id="save-settings" type="button">Apply settings</button></div>
+  </dialog>
 
   <script>
-    async function runAgent() {
-      const btn = document.getElementById('btn');
-      const out = document.getElementById('out');
-      btn.disabled = true; out.textContent = '';
-      const mode = document.querySelector('input[name=mode]:checked').value;
-      const body = {
-        test: document.getElementById('test').value,
-        key: mode === 'real' ? document.getElementById('key').value : '',
-        goal: mode === 'real' ? document.getElementById('goal').value : '',
-      };
-      try {
-        const res = await fetch('/run', {
-          method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(body)
-        });
-        const reader = res.body.getReader();
-        const dec = new TextDecoder();
-        while (true) {
-          const {value, done} = await reader.read();
-          if (done) break;
-          const chunk = dec.decode(value);
-          chunk.split('\n').filter(l => l.trim()).forEach(line => {
-            try {
-              const obj = JSON.parse(line);
-              if (obj.text) out.textContent += obj.text + '\n';
-              else if (obj.turn) out.textContent += `  -> ${obj.turn}: ${obj.summary?.slice(0,120) || ''}\n`;
-              else if (obj.outcome) out.textContent += `\n=== ${obj.outcome} ===\n`;
-            } catch {}
-          });
-        }
-      } catch (e) { out.textContent += '\n[error] ' + e.message; }
-      btn.disabled = false;
+    const state = { history: [], busy: false, actions: 0, tests: 0, files: new Set(), feedback: 0 };
+    const $ = (id) => document.getElementById(id);
+    const thread = $('thread');
+    const esc = (value) => { const node = document.createElement('span'); node.textContent = value || ''; return node.innerHTML; };
+    const make = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; };
+
+    function scrollBottom() { $('conversation').scrollTop = $('conversation').scrollHeight; }
+    function setStatus(label, working = false) { $('composer-status').textContent = label; $('connection-label').textContent = working ? 'agent is working' : label; }
+    function resetStats() { state.actions = 0; state.tests = 0; state.files.clear(); state.feedback = 0; updateStats(); }
+    function updateStats() { $('stat-actions').textContent = state.actions; $('stat-tests').textContent = state.tests; $('stat-files').textContent = state.files.size; $('stat-feedback').textContent = state.feedback; }
+
+    function addUser(text) {
+      $('welcome')?.remove();
+      const message = make('article', 'message message-user');
+      message.append(make('div', 'message-avatar', 'you'));
+      const body = make('div', 'message-body'); body.append(make('div', 'message-label', 'your task'), make('div', 'message-text', text)); message.append(body); thread.append(message); scrollBottom();
     }
+    function addProse(text) {
+      if (!text) return;
+      const message = make('article', 'message message-agent');
+      message.append(make('div', 'message-avatar', 'ai'));
+      const body = make('div', 'message-body'); body.append(make('div', 'message-label', 'agent'), make('div', 'message-text', text)); message.append(body); thread.append(message); scrollBottom();
+    }
+    function addEvent(kind, title, detail, meta) {
+      const event = make('article', `event ${kind || ''}`);
+      event.append(make('span', 'event-marker'));
+      const body = make('div'); const head = make('div', 'event-head'); head.append(make('strong', 'event-title', title)); if (meta) head.append(make('span', 'event-meta', meta)); body.append(head); if (detail) body.append(make('div', 'event-detail', detail)); event.append(body); thread.append(event); scrollBottom();
+    }
+    function addDiff(path, diff) {
+      const card = make('section', 'diff'); const head = make('div', 'diff-head'); head.append(make('strong', '', 'Proposed change')); head.append(make('span', '', path)); card.append(head);
+      const pre = make('pre'); pre.innerHTML = diff.split('\n').map((line) => { const safe = esc(line); if (line.startsWith('+') && !line.startsWith('+++')) return `<span class="add">${safe}</span>`; if (line.startsWith('-') && !line.startsWith('---')) return `<span class="del">${safe}</span>`; return safe; }).join('\n'); card.append(pre); thread.append(card); scrollBottom();
+    }
+    function addReport(data) {
+      const report = make('section', 'report'); const head = make('div', 'report-head'); head.append(make('strong', 'report-title', 'Task report')); head.append(make('span', 'report-outcome', data.outcome || '')); report.append(head);
+      const grid = make('div', 'report-grid');
+      [['files changed', (data.files_changed || []).join(', ') || 'none'], ['commands run', (data.commands_run || []).join(', ') || 'none'], ['tests', (data.tests || []).map((t) => `${t.selector} / ${t.green ? 'green' : 'red'}`).join(', ') || 'none'], ['summary', data.summary || 'none']].forEach(([label, value]) => { const field = make('div', 'report-field'); field.append(make('span', 'report-label', label), make('span', 'report-value', value)); grid.append(field); }); report.append(grid); thread.append(report); scrollBottom();
+    }
+    function handleEvent(event) {
+      if (event.type === 'prose') { addProse(event.text); state.history.push({ role: 'assistant', content: event.text }); }
+      else if (event.type === 'action') { state.actions += 1; if (event.path) state.files.add(event.path); state.tests += event.action === 'RunTests' ? 1 : 0; updateStats(); addEvent('', event.action, event.summary, event.path || 'tool call'); }
+      else if (event.type === 'feedback') { state.feedback += 1; updateStats(); addEvent('feedback', `feedback / ${event.category}`, event.hint, 'classifier'); }
+      else if (event.type === 'deny') addEvent('denied', 'action denied', event.reason, 'governance');
+      else if (event.type === 'diff') addDiff(event.path, event.diff);
+      else if (event.type === 'done') addEvent('done', 'verified', event.reason, 'agent finished');
+      else if (event.type === 'outcome') addEvent(event.outcome === 'SUCCESS' ? 'success' : 'error', event.outcome, '', 'run outcome');
+      else if (event.type === 'report') addReport(event);
+      else if (event.type === 'error') addEvent('error', 'request error', event.message, 'server');
+    }
+
+    async function send(prompt) {
+      if (state.busy) return;
+      const input = $('input'); const text = (prompt || input.value).trim(); if (!text) return;
+      input.value = ''; input.style.height = '43px'; state.busy = true; $('send').disabled = true; setStatus('streaming events', true); addUser(text);
+      const priorHistory = state.history.slice(-12); state.history.push({ role: 'user', content: text });
+      const payload = { message: text, mode: document.querySelector('input[name=mode]:checked').value, key: $('key').value, base_url: $('base_url').value, model: $('model').value, accept: $('accept').value, repo: $('repo').value, history: priorHistory };
+      try {
+        const response = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.detail || `request failed (${response.status})`); }
+        const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
+        while (true) { const chunk = await reader.read(); if (chunk.done) break; buffer += decoder.decode(chunk.value, { stream: true }); const lines = buffer.split('\n'); buffer = lines.pop(); lines.filter(Boolean).forEach((line) => { try { handleEvent(JSON.parse(line)); } catch (_) {} }); }
+        if (buffer.trim()) { try { handleEvent(JSON.parse(buffer)); } catch (_) {} }
+        setStatus('ready for a task');
+      } catch (error) { addEvent('error', 'request error', error.message, 'client'); setStatus('request failed'); }
+      state.busy = false; $('send').disabled = false;
+    }
+
+    function newRun() { if (state.busy) return; thread.innerHTML = ''; resetStats(); state.history = []; thread.append(document.createRange().createContextualFragment(`<section class="welcome" id="welcome"><div class="eyebrow">Agent = LLM + Harness</div><h1>From failing test to verified change.</h1><p>Try the guided run to see the feedback loop, scope fence, test execution and final report as they happen.</p><div class="quick-actions"><button class="quick-action" type="button" data-prompt="Run the guided red-green demo"><strong>Run guided demo</strong><small>mock LLM / isolated fixture</small></button></div></section>`)); setStatus('ready for a task'); }
+    function openSettings() { $('settings-dialog').showModal(); }
+    function closeSettings() { $('settings-dialog').close(); const mode = document.querySelector('input[name=mode]:checked').value; $('run-mode').textContent = mode === 'demo' ? 'Guided demo / mock LLM' : 'Real provider / API key'; $('run-accept').textContent = `Acceptance: ${$('accept').value || 'not set'}`; }
+
+    $('send').addEventListener('click', () => send()); $('reset').addEventListener('click', newRun); $('open-settings').addEventListener('click', openSettings); $('close-settings').addEventListener('click', closeSettings); $('save-settings').addEventListener('click', closeSettings);
+    document.addEventListener('click', (event) => { const button = event.target.closest('[data-prompt]'); if (button) send(button.dataset.prompt); });
+    $('input').addEventListener('keydown', (event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send(); } });
+    $('input').addEventListener('input', function () { this.style.height = '43px'; this.style.height = `${Math.min(this.scrollHeight, 145)}px`; });
+    document.querySelectorAll('input[name=mode]').forEach((radio) => radio.addEventListener('change', () => { $('connection-label').textContent = radio.value === 'demo' ? 'demo sandbox ready' : 'real provider selected'; }));
+    updateStats();
   </script>
 </body>
 </html>

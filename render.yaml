@@ -9,6 +9,12 @@ services:
     envVars:
       - key: HARNESS_DEMO_REPO
         value: /app/examples/demo
+      - key: HARNESS_ISOLATE_DEMO
+        value: "1"
+      - key: HARNESS_ALLOW_CUSTOM_REPO
+        value: "0"
+      - key: HARNESS_ALLOW_CUSTOM_BASE_URL
+        value: "0"
       - key: PYTHONUNBUFFERED
         value: "1"
     plan: free

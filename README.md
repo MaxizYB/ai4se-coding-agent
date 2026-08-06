@@ -28,9 +28,9 @@ cd ai4se-coding-agent
 pip install -e ".[full,dev]"
 ```
 
-`[full]` adds fastapi/uvicorn/httpx (for the WebUI + real-LLM client); `[dev]` adds pytest/ruff.
+`[full]` adds fastapi/uvicorn/httpx (for the WebUI + real-LLM client); `[dev]` adds pytest/ruff. `rich` powers the color-aware CLI presenter.
 
-Core dependency is `cryptography` (for the credential store). FastAPI/uvicorn/httpx are only needed for the WebUI and the real GLM client.
+Core dependencies are `cryptography` (credential storage) and `rich` (CLI presentation). FastAPI/uvicorn/httpx are only needed for the WebUI and the real GLM client.
 
 ---
 
@@ -65,12 +65,26 @@ harness fix --repo /path/to/project --test tests/test_foo.py::test_add
 # returns 0 on SUCCESS, 1 otherwise, 2 on missing credentials
 ```
 
-### WebUI (§五.9) — demo mode (mock LLM, no key needed)
+### WebUI (§五.9) — guided demo or real model
 ```bash
 pip install -e ".[full,dev]"
-HARNESS_DEMO_REPO=/path/to/demo/project uvicorn web.app:app --reload
-# open http://localhost:8000 — submit a test selector, watch the loop stream turns
+uvicorn web.app:app --reload
+# open http://localhost:8000 — run the guided red-green flow in the browser
 ```
+
+The browser UI is a thin event-streaming view over the same `ChatRunner` kernel
+used by the CLI. Guided demo runs use a fresh temporary copy of
+`examples/demo`, so a public deployment cannot mutate its source fixture. The
+Settings dialog can use a real GLM-compatible endpoint for one request; the key
+is sent over HTTPS and is not persisted by the UI. For local work on another
+repository, explicitly opt in before starting the server:
+
+```bash
+HARNESS_ALLOW_CUSTOM_REPO=1 HARNESS_DEMO_REPO=/path/to/project uvicorn web.app:app
+```
+
+Public deployments keep custom repositories and custom model endpoints disabled
+(`HARNESS_ALLOW_CUSTOM_REPO=0`, `HARNESS_ALLOW_CUSTOM_BASE_URL=0`).
 
 ### Mechanism demo (§A.6) — fully offline, deterministic
 ```bash
@@ -147,10 +161,10 @@ src/harness/
   context/manager.py    # engineered context-delivery layer
   memory/store.py       # notes + JSONL run-log
   llm/{base,mock,zhipu}.py   # LLM seam + offline mock + real GLM
-web/{app.py,templates/}     # thin FastAPI WebUI (§五.9)
+web/{app.py,presenter.py,templates/} # thin FastAPI WebUI (§五.9)
 scripts/mechanism_demo.py   # §A.6 deterministic demo
-tests/{unit,integration,fixtures}/   # 108 tests, offline
-Dockerfile  .gitlab-ci.yml  Makefile  pyproject.toml  harness.toml.example
+tests/{unit,integration,fixtures}/   # 238 tests, offline
+Dockerfile  .github/workflows/ci.yml  Makefile  pyproject.toml  harness.toml.example
 SPEC.md  PLAN.md  SPEC_PROCESS.md  AGENT_LOG.md  REFLECTION.md
 ```
 
@@ -166,10 +180,21 @@ SPEC.md  PLAN.md  SPEC_PROCESS.md  AGENT_LOG.md  REFLECTION.md
 ## Known limitations
 
 - Python ≥ 3.11; Linux is the primary target (symlink fence + `0o600` semantics tested on Linux).
-- The WebUI ships in **demo mode** (mock LLM) so it runs without a key; driving a real run is via the CLI.
+- The WebUI demo is intentionally limited to the bundled pytest fixture. For a
+  real project, use the CLI or enable `HARNESS_ALLOW_CUSTOM_REPO=1` only on a
+  trusted local network.
 - The action protocol's `assert a == b` parser targets simple assertions (TDD red-green targets); composite/chained asserts fall back to `UNKNOWN`.
 - Live GLM round-trip is covered by a gated `@pytest.mark.live` test (not run by default).
 
+## Deployment
+
+`render.yaml` and `Dockerfile` describe a low-cost Render web service. Connect
+the public GitHub repository in Render and let it use the blueprint; the health
+check is `GET /`. The image starts `uvicorn web.app:app` with the demo fixture
+isolated per request. Render's free plan may sleep between visits, and no
+public URL is hardcoded in this repository because it is assigned by the
+deployment provider.
+
 ## License / third-party
 
-Third-party deps: `cryptography`, `fastapi`, `uvicorn`, `httpx`, `pytest`, `ruff` (see `pyproject.toml`). Built with the [Superpowers](https://github.com/obra/superpowers) methodology (brainstorming → writing-plans → cold-start validation → subagent-driven-development → TDD → code review → finishing-a-development-branch).
+Third-party deps: `cryptography`, `rich`, `fastapi`, `uvicorn`, `httpx`, `pytest`, `ruff` (see `pyproject.toml`). Built with the [Superpowers](https://github.com/obra/superpowers) methodology (brainstorming → writing-plans → cold-start validation → subagent-driven-development → TDD → code review → finishing-a-development-branch).
