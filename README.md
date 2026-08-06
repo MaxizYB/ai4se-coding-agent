@@ -163,7 +163,7 @@ src/harness/
   llm/{base,mock,zhipu}.py   # LLM seam + offline mock + real GLM
 web/{app.py,presenter.py,templates/} # thin FastAPI WebUI (§五.9)
 scripts/mechanism_demo.py   # §A.6 deterministic demo
-tests/{unit,integration,fixtures}/   # 239 tests, offline
+tests/{unit,integration,fixtures}/   # 240 tests, offline
 Dockerfile  .github/workflows/ci.yml  Makefile  pyproject.toml  harness.toml.example
 SPEC.md  PLAN.md  SPEC_PROCESS.md  AGENT_LOG.md  REFLECTION.md
 ```

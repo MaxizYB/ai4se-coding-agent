@@ -138,3 +138,4 @@ worktree `.worktrees/feedback-core`（`feat/feedback-core`）。每 task：新�
 - **提交**：`ce9f5af`（本次工作由主 agent 直接完成，未引入新的 subagent 分支）。
 - **补充修复**：`8964e2f` 将主聊天路径的 diff 预览设为 `always`，确保界面实际收到并展示统一 diff；对应回归断言已加入。
 - **部署修复**：公网 Render guided demo 报 `No such file or directory: pytest`。根因是 Docker 安装 `.[full]`，但 pytest 只在 `dev` extra。`7665da7` 将 pytest 放入 `full`，并新增打包回归测试；离线套件更新为 `239 passed`。
+- **对话分流修复**：用户反馈“Explain how the feedback loop works”仍触发 foo.py 修复。根因是 demo 使用固定动作脚本，未读取任务意图。`573c4a3` 让 mock demo 对解释请求返回纯 prose、对明确 guided/fix 请求执行 red-green，且忽略回灌的 `OBSERVATION/FEEDBACK`；新增回归测试，离线套件 `240 passed`。
