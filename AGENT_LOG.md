@@ -136,3 +136,4 @@ worktree `.worktrees/feedback-core`（`feat/feedback-core`）。每 task：新�
 - **界面**：把原始聊天页改成响应式 control-room 工作台，展示 kernel 模块、运行统计、对话、动作、反馈、diff、task report，Settings 支持 demo/real 模式，所有动态文本使用 DOM `textContent`/转义。
 - **验证**：新增 WebUI 事件链、任意仓库拒绝、隔离 fixture 与 bundled demo 回归测试；离线套件 `238 passed`，`ruff check src tests scripts web` 通过。
 - **提交**：`ce9f5af`（本次工作由主 agent 直接完成，未引入新的 subagent 分支）。
+- **补充修复**：`8964e2f` 将主聊天路径的 diff 预览设为 `always`，确保界面实际收到并展示统一 diff；对应回归断言已加入。
