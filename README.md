@@ -28,7 +28,7 @@ cd ai4se-coding-agent
 pip install -e ".[full,dev]"
 ```
 
-`[full]` adds fastapi/uvicorn/httpx (for the WebUI + real-LLM client); `[dev]` adds pytest/ruff. `rich` powers the color-aware CLI presenter.
+`[full]` adds fastapi/uvicorn/httpx plus pytest (for the WebUI, real-LLM client, and guided demo); `[dev]` adds test/lint tooling. `rich` powers the color-aware CLI presenter.
 
 Core dependencies are `cryptography` (credential storage) and `rich` (CLI presentation). FastAPI/uvicorn/httpx are only needed for the WebUI and the real GLM client.
 
@@ -163,7 +163,7 @@ src/harness/
   llm/{base,mock,zhipu}.py   # LLM seam + offline mock + real GLM
 web/{app.py,presenter.py,templates/} # thin FastAPI WebUI (§五.9)
 scripts/mechanism_demo.py   # §A.6 deterministic demo
-tests/{unit,integration,fixtures}/   # 238 tests, offline
+tests/{unit,integration,fixtures}/   # 239 tests, offline
 Dockerfile  .github/workflows/ci.yml  Makefile  pyproject.toml  harness.toml.example
 SPEC.md  PLAN.md  SPEC_PROCESS.md  AGENT_LOG.md  REFLECTION.md
 ```

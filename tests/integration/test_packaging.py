@@ -1,5 +1,7 @@
 import importlib.metadata as md
 import subprocess
+import tomllib
+from pathlib import Path
 
 
 def test_package_importable():
@@ -29,3 +31,11 @@ def test_console_script_entrypoint_works():
         f"expected '(no keys stored)' in output; got stdout=\n{r.stdout}\n"
         f"stderr=\n{r.stderr}"
     )
+
+
+def test_full_extra_includes_pytest_for_guided_web_demo():
+    """The Render image installs ``.[full]`` and invokes pytest at runtime."""
+    root = Path(__file__).resolve().parents[2]
+    with (root / "pyproject.toml").open("rb") as f:
+        full = tomllib.load(f)["project"]["optional-dependencies"]["full"]
+    assert any(requirement.startswith("pytest") for requirement in full)
