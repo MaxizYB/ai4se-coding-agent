@@ -49,4 +49,4 @@ jobs:
       - name: Build Docker image
         run: docker build -t harness:ci .
       - name: Smoke test (key status)
-        run: docker run --rm harness:ci key status
+        run: docker run --rm harness:ci harness key status
