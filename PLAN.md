@@ -25,7 +25,7 @@
 | T18 | ZhipuLLMClient | ✅ done | `6a0f6bc` |
 | T19 | CLI | ✅ done | `13db363`+`5c6bc68` |
 | T20 | §A.6 mechanism demo | ✅ done | `d68552d`+`85a81e9` |
-| T21 | WebUI | ✅ done | `d6301cc`+`5de9c02` |
+| T21 | WebUI | ✅ done | `d6301cc`+`5de9c02`+`ce9f5af` |
 | T22 | Docker + CI | ✅ done | `7828fc5`+`5de9c02` |
 | Chat-T1..T6 | Conversational CLI (split_prose/presenter/build_chat/ChatRunner/cli/docs) | ✅ done | `7b0aed2`..`b3cfd32` |
 | Gov-G1..G5 | Governance deep-dim (Sandbox/Diff/TaskReport/Docker) | ✅ done | `bed37f3`..`e03b134` |
@@ -2648,4 +2648,3 @@ git commit -m "ci: Dockerfile + .gitlab-ci.yml (unit-test job + image build)"
 - **Circular import:** T17 introduces `harness/types.py` (Message) and refactors `context.manager` to import from it — execute that refactor or `Message` lookups break in agent.
 - **Runner dependency note:** T13/T14/T17 tests spawn real `pytest` subprocesses (allowed — that's the target runner, not the LLM; still offline/no-network).
 - **Live tests** (T18) deselected by `make test` (`-m "not live"`); default CI stays offline & deterministic per §A.6.
-

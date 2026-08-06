@@ -135,3 +135,4 @@ worktree `.worktrees/feedback-core`（`feat/feedback-core`）。每 task：新�
 - **人工实现**：重写 Web presentation adapter，统一 `/api/chat` NDJSON 事件流；补 demo mock red→green 脚本、输入校验、并发上限、HTTPS endpoint allowlist、custom repo 显式 opt-in、临时 fixture 隔离与异常清理。保留 `/run` 兼容接口。
 - **界面**：把原始聊天页改成响应式 control-room 工作台，展示 kernel 模块、运行统计、对话、动作、反馈、diff、task report，Settings 支持 demo/real 模式，所有动态文本使用 DOM `textContent`/转义。
 - **验证**：新增 WebUI 事件链、任意仓库拒绝、隔离 fixture 与 bundled demo 回归测试；离线套件 `238 passed`，`ruff check src tests scripts web` 通过。
+- **提交**：`ce9f5af`（本次工作由主 agent 直接完成，未引入新的 subagent 分支）。
