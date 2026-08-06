@@ -1,21 +1,92 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Harness Demo</title></head>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>harness — Coding Agent</title>
+  <style>
+    :root { --bg: #0d1117; --fg: #e6edf3; --dim: #8b949e; --acc: #58a6ff; --ok: #3fb950; --err: #f85149; --panel: #161b22; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, 'Segoe UI', monospace; background: var(--bg); color: var(--fg); padding: 20px; max-width: 900px; margin: 0 auto; }
+    h1 { font-size: 1.4rem; margin-bottom: 4px; }
+    .sub { color: var(--dim); font-size: 0.85rem; margin-bottom: 16px; }
+    .card { background: var(--panel); border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+    label { display: block; font-size: 0.8rem; color: var(--dim); margin-bottom: 4px; }
+    input, textarea { width: 100%; background: var(--bg); border: 1px solid #30363d; border-radius: 6px; color: var(--fg); padding: 8px 12px; font-size: 0.9rem; margin-bottom: 10px; }
+    input:focus, textarea:focus { border-color: var(--acc); outline: none; }
+    button { background: var(--acc); color: #fff; border: none; border-radius: 6px; padding: 8px 20px; font-size: 0.9rem; cursor: pointer; }
+    button:hover { opacity: 0.9; }
+    button:disabled { opacity: 0.5; cursor: wait; }
+    #out { white-space: pre-wrap; word-break: break-word; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.82rem; line-height: 1.5; max-height: 60vh; overflow-y: auto; }
+    .hint { color: var(--dim); font-size: 0.75rem; margin-top: 4px; }
+    .mode { display: flex; gap: 12px; margin-bottom: 10px; }
+    .mode label { display: flex; align-items: center; gap: 4px; font-size: 0.8rem; cursor: pointer; }
+  </style>
+</head>
 <body>
-  <h1>Coding Agent Harness — TDD Red-Green Fixer</h1>
-  <form id="f">
-    <label>Failing test selector: <input name="test" value="tests/test_foo.py::test_add"></label>
-    <button>Run</button>
-  </form>
-  <pre id="out"></pre>
+  <h1>harness — Coding Agent</h1>
+  <p class="sub">Agent = LLM + Harness. The LLM decides; everything else is code.</p>
+
+  <div class="card">
+    <div class="mode">
+      <label><input type="radio" name="mode" value="demo" checked onchange="document.getElementById('key-field').style.display='none'; document.getElementById('goal-field').style.display='none';"> Demo (mock LLM)</label>
+      <label><input type="radio" name="mode" value="real" onchange="document.getElementById('key-field').style.display='block'; document.getElementById('goal-field').style.display='block';"> Real LLM (GLM-4.6)</label>
+    </div>
+
+    <div id="key-field" style="display:none">
+      <label>API Key (ZHIPU_API_KEY)</label>
+      <input type="password" id="key" placeholder="paste your GLM key — stays in browser, not stored">
+    </div>
+
+    <div id="goal-field" style="display:none">
+      <label>Task (natural language)</label>
+      <textarea id="goal" rows="2" placeholder="e.g. fix the add function to return a+b"></textarea>
+    </div>
+
+    <label>Acceptance test (pytest selector)</label>
+    <input id="test" value="tests/test_foo.py::test_add">
+    <button id="btn" onclick="runAgent()">Run</button>
+    <p class="hint">Demo mode: mock agent runs a scripted red→green loop. Real mode: GLM-4.6 drives the agent with your task.</p>
+  </div>
+
+  <div class="card">
+    <div id="out">— output appears here —</div>
+  </div>
+
   <script>
-    document.getElementById('f').onsubmit = async (e) => {
-      e.preventDefault();
-      const fd = new FormData(e.target);
-      const res = await fetch('/run', {method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({test: fd.get('test')})});
-      const reader = res.body.getReader(); const dec = new TextDecoder();
+    async function runAgent() {
+      const btn = document.getElementById('btn');
       const out = document.getElementById('out');
-      while (true) { const {value, done} = await reader.read(); if (done) break; out.textContent += dec.decode(value); }
-    };
+      btn.disabled = true; out.textContent = '';
+      const mode = document.querySelector('input[name=mode]:checked').value;
+      const body = {
+        test: document.getElementById('test').value,
+        key: mode === 'real' ? document.getElementById('key').value : '',
+        goal: mode === 'real' ? document.getElementById('goal').value : '',
+      };
+      try {
+        const res = await fetch('/run', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(body)
+        });
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        while (true) {
+          const {value, done} = await reader.read();
+          if (done) break;
+          const chunk = dec.decode(value);
+          chunk.split('\n').filter(l => l.trim()).forEach(line => {
+            try {
+              const obj = JSON.parse(line);
+              if (obj.text) out.textContent += obj.text + '\n';
+              else if (obj.turn) out.textContent += `  -> ${obj.turn}: ${obj.summary?.slice(0,120) || ''}\n`;
+              else if (obj.outcome) out.textContent += `\n=== ${obj.outcome} ===\n`;
+            } catch {}
+          });
+        }
+      } catch (e) { out.textContent += '\n[error] ' + e.message; }
+      btn.disabled = false;
+    }
   </script>
-</body></html>
+</body>
+</html>

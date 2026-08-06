@@ -6,7 +6,7 @@ from web.app import app
 def test_index_returns_form():
     c = TestClient(app)
     r = c.get("/")
-    assert r.status_code == 200 and "<form" in r.text
+    assert r.status_code == 200 and "<button" in r.text
 
 
 def test_run_streams_turns(tmp_path, monkeypatch):

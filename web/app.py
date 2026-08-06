@@ -22,6 +22,8 @@ _TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "templates", "index.htm
 
 class RunReq(BaseModel):
     test: str
+    key: str = ""
+    goal: str = ""
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -68,17 +70,38 @@ def _runner(repo: str):
 @app.post("/run")
 def run(req: RunReq):
     repo = os.environ.get("HARNESS_DEMO_REPO", ".")
-    runner = _runner(repo)
-
-    def stream():
-        result = runner.run(Task(repo, req.test))
-        for t in result.turns:
-            yield (
-                json.dumps(
-                    {"turn": t.action, "decision": t.decision, "summary": t.summary}
-                )
-                + "\n"
-            )
-        yield json.dumps({"outcome": result.outcome, "diff": result.edits_diff}) + "\n"
-
-    return StreamingResponse(stream(), media_type="application/x-ndjson")
+    if req.key:
+        from harness.llm.zhipu import ZhipuLLMClient
+        cfg = Config.default()
+        cfg.project_root = repo
+        cfg.diff_preview = "never"
+        mem = MemoryStore(os.path.join(repo, "HARNESS.md"), os.path.join(repo, ".harness", "run.jsonl"))
+        cm = ContextManager(cfg, mem)
+        from harness.guardrails.sandbox import Sandbox
+        from harness.interactive.chat import ChatRunner
+        from harness.interactive.presenter import Presenter
+        runner = ChatRunner(
+            ZhipuLLMClient("glm-4.6", req.key),
+            cfg, ToolDispatcher(cfg), Guardrail(cfg),
+            HITL(FailClosedApprover()),
+            FeedbackEngine(cfg.test_timeout_s, cfg.stuck_repeat_n, cfg.stuck_no_progress_m, cfg.hint_history_lines),
+            cm, presenter=Presenter(), sandbox=Sandbox(cfg),
+        )
+        def stream():
+            import io
+            buf = io.StringIO()
+            pres = Presenter(out=buf)
+            runner.presenter = pres
+            runner.run_task(repo, req.goal or f"make {req.test} pass", accept=req.test)
+            for line in buf.getvalue().splitlines():
+                yield json.dumps({"text": line}) + "\n"
+            yield json.dumps({"outcome": "done"}) + "\n"
+        return StreamingResponse(stream(), media_type="application/x-ndjson")
+    else:
+        runner = _runner(repo)
+        def stream():
+            result = runner.run(Task(repo, req.test))
+            for t in result.turns:
+                yield json.dumps({"turn": t.action, "decision": t.decision, "summary": t.summary}) + "\n"
+            yield json.dumps({"outcome": result.outcome, "diff": result.edits_diff}) + "\n"
+        return StreamingResponse(stream(), media_type="application/x-ndjson")

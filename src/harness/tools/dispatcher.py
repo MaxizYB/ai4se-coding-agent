@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from harness.actions.protocol import (
     Action,
     EditFile,
+    GrepSearch,
     ListDir,
     ReadFile,
     RunShell,
@@ -58,8 +59,12 @@ class ToolDispatcher:
             with open(p, "w") as f:
                 f.write(text.replace(action.old, action.new, 1))
             return ToolResult(True, f"edited {action.path}", "", 0)
+        if isinstance(action, GrepSearch):
+            from harness.memory.retriever import Retriever
+            root = os.path.join(self.config.project_root, action.path)
+            hits = Retriever.grep(action.pattern, root if os.path.isdir(root) else self.config.project_root)
+            return ToolResult(True, "\n".join(hits) if hits else "(no matches)", "", 0)
         if isinstance(action, RunShell):
-            # `input=action.stdin`: pipe optional STDIN into the command so the
             # agent can drive interactive CLIs (e.g. feed moves to a game).
             # Empty string = immediate EOF (no hang on a TTY) — safer than the
             # old behavior of inheriting the parent's stdin.

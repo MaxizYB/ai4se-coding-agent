@@ -4,6 +4,7 @@ from harness.actions.protocol import (
     Action,
     EditFile,
     Finish,
+    GrepSearch,
     ListDir,
     ReadFile,
     RunShell,
@@ -29,6 +30,7 @@ _SIMPLE = {
     "list_dir": lambda p: ListDir(p.get("PATH", ".")),  # PATH optional — defaults to repo root (cwd)
     "run_tests": lambda p: RunTests(p.get("ARGS", "")),
     "finish": lambda p: Finish(p.get("REASON", "")),
+    "grep_search": lambda p: GrepSearch(p["PATTERN"], p.get("PATH", ".")),
 }
 
 

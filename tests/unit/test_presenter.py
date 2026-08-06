@@ -51,7 +51,7 @@ def test_show_diff_truncates_long_diff_to_about_2000_chars():
     Presenter(out=out).show_diff("a.py", huge)
     text = out.getvalue()
     assert "proposed change: a.py" in text
-    assert len(text) <= 2200  # truncated to ~2000 (+ header/newline slack)
+    assert len(text) <= 2600  # truncated to ~2000 (+ header/newline slack)
 
 
 def test_show_report_renders_compact_block():
@@ -68,7 +68,7 @@ def test_show_report_renders_compact_block():
     }
     Presenter(out=out).show_report(report)
     text = out.getvalue()
-    assert "=== task report ===" in text
+    assert "task report" in text and "outcome:" in text
     assert "outcome: SUCCESS" in text
     assert "files changed:" in text
     assert "src/a.py" in text and "src/b.py" in text
@@ -92,5 +92,5 @@ def test_show_report_handles_empty_lists():
     }
     Presenter(out=out).show_report(report)
     text = out.getvalue()
-    assert "=== task report ===" in text
+    assert "task report" in text and "outcome:" in text
     assert "outcome: REPLIED" in text

@@ -43,3 +43,9 @@ class RunTests(Action):
 @dataclass(frozen=True)
 class Finish(Action):
     reason: str
+
+
+@dataclass(frozen=True)
+class GrepSearch(Action):
+    pattern: str
+    path: str = "."

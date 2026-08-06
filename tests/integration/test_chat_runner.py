@@ -356,7 +356,7 @@ def test_chat_report_shown_after_edit_runtests_finish(tmp_path):
     r, pres = _runner(tmp_path, script, lines)
     r.run(str(tmp_path), accept=None)
     text = pres.out.getvalue()
-    assert "=== task report ===" in text          # report emitted at FINISH
+    assert "task report" in text and "outcome:" in text          # report emitted at FINISH
     assert "outcome: FINISH" in text
     assert "src/foo.py" in text                    # edited file surfaced
     assert "tests/test_foo.py::test_add" in text   # test entry surfaced

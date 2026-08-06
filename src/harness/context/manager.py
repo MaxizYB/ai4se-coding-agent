@@ -73,6 +73,10 @@ Exact examples (copy the format precisely):
   ACTION: finish
   REASON: task complete
 
+  ACTION: grep_search
+  PATTERN: def add
+  PATH: src
+
 Rules:
 - PATH is REQUIRED for read_file/write_file/edit_file; OPTIONAL for list_dir (omit to list the repo root).
 - write_file: put file content after the PATH line (raw), or use a <<<...>>> block.
