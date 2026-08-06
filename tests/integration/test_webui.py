@@ -58,6 +58,7 @@ def test_chat_demo_streams_structured_red_green_events(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert '"type": "prose"' in body
     assert '"type": "feedback"' in body
+    assert '"type": "diff"' in body
     assert '"outcome": "SUCCESS"' in body
     assert (tmp_path / "src" / "foo.py").read_text().endswith("return a - b\n")
 
@@ -69,6 +70,7 @@ def test_bundled_demo_still_exercises_feedback_loop():
 
     assert response.status_code == 200
     assert '"type": "feedback"' in body
+    assert '"type": "diff"' in body
     assert '"files_changed": ["src/foo.py"]' in body
 
 

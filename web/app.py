@@ -148,7 +148,9 @@ def _demo_script(selector: str) -> list[str]:
 def _build_runner(req: ChatRequest, presenter: WebPresenter, repo: str):
     cfg = Config.default()
     cfg.project_root = repo
-    cfg.diff_preview = "never"  # Web mode is non-interactive and fail-closed.
+    # ``always`` exposes the exact unified diff in the stream while remaining
+    # non-interactive: it previews, then applies without waiting for stdin.
+    cfg.diff_preview = "always"
     mem = MemoryStore(os.path.join(repo, "HARNESS.md"), os.path.join(repo, ".harness", "run.jsonl"))
     cm = ContextManager(cfg, mem)
     if req.mode == "real":
