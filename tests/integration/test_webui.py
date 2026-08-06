@@ -74,6 +74,23 @@ def test_bundled_demo_still_exercises_feedback_loop():
     assert '"files_changed": ["src/foo.py"]' in body
 
 
+def test_demo_explanation_does_not_run_fixture_tools(tmp_path, monkeypatch):
+    monkeypatch.setenv("HARNESS_DEMO_REPO", str(_demo_repo(tmp_path)))
+    with TestClient(app).stream(
+        "POST",
+        "/api/chat",
+        json={"message": "Explain how the feedback loop works", "mode": "demo"},
+    ) as response:
+        body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert "The feedback loop is deterministic" in body
+    assert '"type": "action"' not in body
+    assert '"type": "feedback"' not in body
+    assert '"outcome": "REPLIED"' in body
+    assert (tmp_path / "src" / "foo.py").read_text().endswith("return a - b\n")
+
+
 def test_public_chat_rejects_arbitrary_repository(tmp_path, monkeypatch):
     monkeypatch.setenv("HARNESS_DEMO_REPO", str(_demo_repo(tmp_path)))
     monkeypatch.delenv("HARNESS_ALLOW_CUSTOM_REPO", raising=False)

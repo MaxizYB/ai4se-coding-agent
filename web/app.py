@@ -145,6 +145,57 @@ def _demo_script(selector: str) -> list[str]:
     ]
 
 
+def _demo_llm(selector: str):
+    """Return a deterministic demo model that still respects user intent.
+
+    The guided fixture is intentionally scripted, but a scripted model should
+    not turn every conversational question into a file edit. Explanation and
+    unsupported-task turns therefore return prose and end normally; explicit
+    demo/fix requests consume the red-green script.
+    """
+
+    script = iter(item.format(t=selector) for item in _demo_script(selector))
+    explanation = (
+        "The feedback loop is deterministic: the agent runs the acceptance test, "
+        "the JUnit result is classified into a failure category, and the resulting "
+        "hint is fed into the next context. In this guided fixture, the first run "
+        "finds a LOGIC failure, the agent edits src/foo.py, and a second test run "
+        "proves the change before SUCCESS."
+    )
+    unsupported = (
+        "Guided demo mode only runs the bundled add-test red-green scenario. "
+        "Use Settings -> Real LLM to work on a different coding task."
+    )
+
+    def complete(messages):
+        prompt = next(
+            (
+                item.content
+                for item in reversed(messages)
+                if item.role == "user"
+                and not item.content.lstrip().startswith(("OBSERVATION:", "FEEDBACK:"))
+            ),
+            "",
+        )
+        lowered = prompt.lower()
+        asks_for_explanation = (
+            any(term in lowered for term in ("explain", "what is", "what are", "how does", "how do", "why"))
+            or "feedback" in lowered
+            or any(term in prompt for term in ("解释", "如何", "怎么", "为什么", "什么是"))
+        )
+        asks_for_demo = any(
+            term in lowered
+            for term in ("guided", "red-green", "red green", "run demo", "run the test", "fix")
+        ) or any(term in prompt for term in ("演示", "修复", "测试"))
+        if asks_for_explanation:
+            return explanation
+        if not asks_for_demo:
+            return unsupported
+        return next(script, "The guided demo is complete.")
+
+    return complete
+
+
 def _build_runner(req: ChatRequest, presenter: WebPresenter, repo: str):
     cfg = Config.default()
     cfg.project_root = repo
@@ -160,7 +211,7 @@ def _build_runner(req: ChatRequest, presenter: WebPresenter, repo: str):
 
         llm = ZhipuLLMClient(req.model, req.key, base_url=_validate_base_url(req.base_url))
     else:
-        llm = MockLLMClient([item.format(t=req.accept) for item in _demo_script(req.accept)])
+        llm = MockLLMClient(_demo_llm(req.accept))
     runner = ChatRunner(
         llm,
         cfg,
