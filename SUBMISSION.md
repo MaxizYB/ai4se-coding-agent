@@ -21,7 +21,7 @@ https://github.com/MaxizYB/ai4se-coding-agent/actions
 | 1 | SPEC.md | 仓库根 |
 | 2 | PLAN.md（含 Task Status Summary） | 仓库根 |
 | 3 | SPEC_PROCESS.md | 仓库根 |
-| 4 | 完整源代码 + mock-LLM 单元测试（240 tests） | `src/` `tests/` |
+| 4 | 完整源代码 + mock-LLM 单元测试（242 tests） | `src/` `tests/` |
 | 5 | AGENT_LOG.md | 仓库根 |
 | 6 | REFLECTION.md（学生本人撰写） | 仓库根 |
 | 7 | README.md（安装/运行/分发/目录/安全/限制） | 仓库根 |

@@ -139,3 +139,4 @@ worktree `.worktrees/feedback-core`（`feat/feedback-core`）。每 task：新�
 - **补充修复**：`8964e2f` 将主聊天路径的 diff 预览设为 `always`，确保界面实际收到并展示统一 diff；对应回归断言已加入。
 - **部署修复**：公网 Render guided demo 报 `No such file or directory: pytest`。根因是 Docker 安装 `.[full]`，但 pytest 只在 `dev` extra。`7665da7` 将 pytest 放入 `full`，并新增打包回归测试；离线套件更新为 `239 passed`。
 - **对话分流修复**：用户反馈“Explain how the feedback loop works”仍触发 foo.py 修复。根因是 demo 使用固定动作脚本，未读取任务意图。`573c4a3` 让 mock demo 对解释请求返回纯 prose、对明确 guided/fix 请求执行 red-green，且忽略回灌的 `OBSERVATION/FEEDBACK`；新增回归测试，离线套件 `240 passed`。
+- **只读写入防护**：用户反馈“仓库里面有什么”仍可能被模型错误地引到 `EditFile` 审批。`d477672` 在 `ChatRunner` 为 `WriteFile`/`EditFile` 增加显式变更意图门：查询/解释类请求在 diff 或 HITL 前直接拒绝写入，且内部反馈带 `INTERNAL:` 标记，不能在下一轮被误当作用户授权；明确 `Run guided demo` 仍允许 Web red-green 演示。`ListDir` 对文件路径改为提示使用 `read_file`，不再只暴露 `Errno 20`。新增连续错误写入与文件路径回归，离线套件 `242 passed, 2 deselected`，`ruff` 通过。
