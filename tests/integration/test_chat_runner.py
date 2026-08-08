@@ -243,6 +243,22 @@ def test_pure_prose_reply_ends_turn_without_finish(tmp_path):
     assert "Reading foo." in text
 
 
+def test_informational_request_blocks_model_write(tmp_path):
+    _repo(tmp_path)
+    script = [
+        "I found the likely issue.\n" + EDIT,
+        "I will make the source change now.\n" + EDIT,
+        "The repository is unchanged; ask for a concrete fix when needed.",
+    ]
+    lines = iter(["仓库里面有什么", "/exit"])
+    r, pres = _runner(tmp_path, script, lines)
+    r.run(str(tmp_path), accept="tests/test_foo.py::test_add")
+    text = pres.out.getvalue()
+    assert text.count("write blocked") == 2
+    assert "proposed change" not in text
+    assert "return a - b" in (tmp_path / "src" / "foo.py").read_text()
+
+
 # --- G2: Sandbox gate fires AFTER the guardrail Allow. The guardrail is made
 # permissive here (no dangerous patterns; tests/ admitted to the write SCOPE)
 # so the Sandbox is the SOLE gate that can deny these actions -- proving the

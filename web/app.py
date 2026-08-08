@@ -173,7 +173,7 @@ def _demo_llm(selector: str):
                 item.content
                 for item in reversed(messages)
                 if item.role == "user"
-                and not item.content.lstrip().startswith(("OBSERVATION:", "FEEDBACK:"))
+                and not item.content.lstrip().startswith(("OBSERVATION:", "FEEDBACK:", "INTERNAL:"))
             ),
             "",
         )

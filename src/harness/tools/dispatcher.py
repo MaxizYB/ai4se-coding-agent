@@ -41,8 +41,11 @@ class ToolDispatcher:
             except OSError as e:
                 return ToolResult(False, "", str(e), 1)
         if isinstance(action, ListDir):
+            absolute = self._abs(action.path)
+            if os.path.isfile(absolute):
+                return ToolResult(False, "", f"path is a file; use read_file: {action.path}", 1)
             try:
-                return ToolResult(True, "\n".join(os.listdir(self._abs(action.path))), "", 0)
+                return ToolResult(True, "\n".join(os.listdir(absolute)), "", 0)
             except OSError as e:
                 return ToolResult(False, "", str(e), 1)
         if isinstance(action, WriteFile):

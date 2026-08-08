@@ -36,6 +36,13 @@ def test_list_dir(tmp_path):
     r = d.execute(ListDir("src"))
     assert r.ok and "a.py" in r.stdout
 
+
+def test_list_dir_file_returns_actionable_error(tmp_path):
+    (tmp_path / "src").mkdir(); (tmp_path / "src" / "a.py").write_text("x")
+    d = ToolDispatcher(Config.default()); d.config.project_root = str(tmp_path)
+    r = d.execute(ListDir("src/a.py"))
+    assert not r.ok and "use read_file" in r.stderr
+
 def test_run_shell(tmp_path):
     d = ToolDispatcher(Config.default()); d.config.project_root = str(tmp_path)
     r = d.execute(RunShell("echo hello"))

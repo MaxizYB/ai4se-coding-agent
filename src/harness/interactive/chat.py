@@ -14,6 +14,18 @@ from harness.guardrails.sandbox import Containerize
 from harness.interactive.presenter import Presenter
 from harness.types import Message
 
+_MUTATION_TERMS = (
+    "fix", "add", "implement", "edit", "modify", "change", "refactor", "rewrite",
+    "create", "remove", "delete", "update", "write", "make ", "修复", "新增", "实现",
+    "修改", "重构", "改成", "删除", "编写", "解决", "改", "guided demo", "run demo",
+    "run the demo", "red-green", "red green", "运行演示", "执行演示", "开始演示",
+)
+_READ_ONLY_NEGATIONS = (
+    "do not change", "don't change", "without changing", "no changes", "只读",
+    "只看看", "不要修改", "不用修改", "不改", "仅查看", "只查看",
+)
+_INTERNAL_USER_PREFIXES = ("OBSERVATION:", "FEEDBACK:", "INTERNAL:")
+
 
 class ChatRunner:
     def __init__(
@@ -106,7 +118,7 @@ class ChatRunner:
                 history.append(
                     Message(
                         "user",
-                        f"your last output had a malformed action ({e.reason}). "
+                        f"INTERNAL: your last output had a malformed action ({e.reason}). "
                         "Re-emit ONE action with the correct format per the protocol above.",
                     )
                 )
@@ -127,6 +139,17 @@ class ChatRunner:
                 # report (avoids noise on simple Q&A); one that DID act shows it.
                 self._emit_report("REPLIED", prose)
                 return "REPLIED"
+            if isinstance(action, (WriteFile, EditFile)) and not self._mutation_requested(history):
+                reason = "write blocked: the current request is informational; ask for a change before editing files"
+                self.presenter.show_deny(reason)
+                history.append(Message("assistant", raw))
+                history.append(
+                    Message(
+                        "user",
+                        "INTERNAL: " + reason + ". Reply in plain text or wait for a concrete change request.",
+                    )
+                )
+                continue
             # G2/G5: soft guardrail (+HITL) then HARD sandbox gate. Shared with
             # the `/tests` slash command via _gate() so neither path can bypass
             # the fence. When the Sandbox says Containerize and an executor is
@@ -137,7 +160,7 @@ class ChatRunner:
                 self.presenter.show_deny(decision.reason)
                 history.append(Message("assistant", raw))
                 history.append(
-                    Message("user", f"action denied: {decision.reason}; try a different approach.")
+                    Message("user", f"INTERNAL: action denied: {decision.reason}; try a different approach.")
                 )
                 continue
             # G3: DiffPreviewer + approval gate (write-before-apply). In "ask"
@@ -156,7 +179,7 @@ class ChatRunner:
                             history.append(
                                 Message(
                                     "user",
-                                    f"change to {dpath} not approved; try a different approach.",
+                                    f"INTERNAL: change to {dpath} not approved; try a different approach.",
                                 )
                             )
                             continue
@@ -214,6 +237,30 @@ class ChatRunner:
             history.append(Message("user", "OBSERVATION:\n" + obs))
         self._emit_report("BUDGET_EXHAUSTED", "BUDGET_EXHAUSTED")
         return "BUDGET_EXHAUSTED"
+
+    @staticmethod
+    def _mutation_requested(history: list[Message]) -> bool:
+        """Conservatively gate writes for read/explain turns.
+
+        The LLM may inspect files for an informational question, but a model
+        mistake must not turn that question into a write merely because the
+        system prompt suggested coding actions. Require a mutation verb even
+        when an acceptance selector was supplied, and reject common read-only
+        negations.
+        """
+
+        prompt = next(
+            (
+                item.content.strip().lower()
+                for item in reversed(history)
+                if item.role == "user"
+                and not item.content.lstrip().startswith(_INTERNAL_USER_PREFIXES)
+            ),
+            "",
+        )
+        if any(term in prompt for term in _READ_ONLY_NEGATIONS):
+            return False
+        return any(term in prompt for term in _MUTATION_TERMS)
 
     def _emit_report(self, outcome: str, agent_summary: str) -> None:
         # G4: build + render the structured end-of-task summary. A pure-prose
