@@ -25,6 +25,11 @@ Rules: prefer edit_file over write_file; run run_tests to verify; emit finish wh
 
 _CHAT_SYSTEM = """You are a coding agent working in the repository at {repo}.
 
+The request mode below is determined by the host application and is authoritative.
+Never broaden a read-only or explanatory request into a coding task.
+Request mode: {intent}
+{intent_rules}
+
 Each turn, do exactly one of:
 - Emit a tool action (one short line of prose, then the ACTION block) to make progress.
 - Emit plain text with NO action — to answer a question, summarize, or ask the user. This ends your turn and returns control to the user.
@@ -32,7 +37,7 @@ Each turn, do exactly one of:
 Use tool actions to accomplish the task and verify with run_tests. When the task is done, or the user asked a question that needs no changes, reply in plain text (no ACTION). Do not emit `finish` to answer a question — just reply without an action. Only edit/write files when the user actually asked for a change; for "what is this project"-style questions, read and reply, do not modify anything.
 
 ACTION protocol:
-ACTION: <read_file|list_dir|write_file|edit_file|run_shell|run_tests|finish>
+ACTION: <read_file|list_dir|grep_search|write_file|edit_file|run_shell|run_tests|finish>
 KEY: VALUE            # PATH: ... / ARGS: ... / COMMAND: ... / REASON: ...
 <<<TAG                 # content block (write_file: <<< ... >>> ; edit_file: <<<OLD ... >>>OLD + <<<NEW ... >>>NEW)
 <literal content>
@@ -84,6 +89,28 @@ Rules:
 - run_shell STDIN is optional — use it to feed input to interactive programs; omit for non-interactive commands.
 - After editing, run run_tests to verify (when the project has tests).
 - One action per turn when acting. Plain text with no ACTION = a reply that ends your turn.{accept}"""
+
+_INTENT_RULES = {
+    "inspect": (
+        "This is a read-only repository inspection. You may use only read_file, "
+        "list_dir, grep_search, or finish. Do not run tests, run shell commands, "
+        "write files, edit files, diagnose a defect as a requested fix, or propose "
+        "a change unless the user asks for one."
+    ),
+    "explain": (
+        "This is an explanation request. You may inspect files with read_file, "
+        "list_dir, or grep_search, then answer in plain text. Do not run tests or "
+        "change files."
+    ),
+    "operate": (
+        "This request permits observation and explicitly requested test/shell "
+        "operations, but it does not permit source edits unless the user also asks "
+        "for a change."
+    ),
+    "change": "The user explicitly requested a change. Make the smallest safe edit and verify it.",
+    "demo": "Run the explicitly requested guided demonstration using its scripted red-green flow.",
+    "task": "This is an explicit task-mode request. Complete the requested task and verify it.",
+}
 
 
 def locate_impl_module(test_path: str) -> str | None:
@@ -183,9 +210,24 @@ class ContextManager:
             )
         return msgs
 
-    def build_chat(self, repo: str, accept: str | None, history: list[Message]) -> list[Message]:
+    def build_chat(
+        self,
+        repo: str,
+        accept: str | None,
+        history: list[Message],
+        intent: str = "inspect",
+    ) -> list[Message]:
         accept_line = f"\nAcceptance: the test '{accept}' passing (green) means success." if accept else ""
-        system = Message("system", _CHAT_SYSTEM.format(repo=repo, accept=accept_line))
+        intent_rules = _INTENT_RULES.get(intent, _INTENT_RULES["inspect"])
+        system = Message(
+            "system",
+            _CHAT_SYSTEM.format(
+                repo=repo,
+                accept=accept_line,
+                intent=intent,
+                intent_rules=intent_rules,
+            ),
+        )
         msgs = [system]
         notes = self.memory.load_notes()
         if notes:

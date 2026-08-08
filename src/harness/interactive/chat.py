@@ -3,6 +3,9 @@ from harness.actions.protocol import (
     Action,
     EditFile,
     Finish,
+    GrepSearch,
+    ListDir,
+    ReadFile,
     RunShell,
     RunTests,
     WriteFile,
@@ -25,6 +28,23 @@ _READ_ONLY_NEGATIONS = (
     "只看看", "不要修改", "不用修改", "不改", "仅查看", "只查看",
 )
 _INTERNAL_USER_PREFIXES = ("OBSERVATION:", "FEEDBACK:", "INTERNAL:")
+_READ_ONLY_ACTIONS = (ReadFile, ListDir, GrepSearch, Finish)
+_OPERATE_ACTIONS = _READ_ONLY_ACTIONS + (RunTests, RunShell)
+_QUESTION_PREFIXES = (
+    "what ", "what's ", "which ", "where ", "how ", "why ", "can you ",
+    "could you ", "would you ", "tell me ", "explain ", "什么", "哪些", "哪里",
+    "如何", "怎么", "为什么", "请问",
+)
+_EXPLICIT_CHANGE_PREFIXES = (
+    "fix", "add ", "edit ", "modify ", "change ", "refactor ", "rewrite ",
+    "create ", "remove ", "delete ", "update ", "write ", "make ", "please fix",
+    "can you fix", "could you fix", "请修复", "帮我修复", "修复", "请修改", "帮我修改",
+    "修改", "新增", "实现", "重构", "删除", "编写", "解决", "改成", "改一下",
+)
+_EXPLICIT_OPERATION_PREFIXES = (
+    "run ", "test ", "check tests", "please run", "can you run", "could you run",
+    "运行", "执行测试", "运行测试", "测试一下",
+)
 
 
 class ChatRunner:
@@ -78,7 +98,7 @@ class ChatRunner:
                     return 0
                 continue
             history.append(Message("user", line))
-            outcome = self._agent_loop(repo, accept, history)
+            outcome = self._agent_loop(repo, accept, history, intent=self._request_intent(history))
             if outcome != "REPLIED":
                 # REPLIED is a normal conversational turn — no status line.
                 # SUCCESS/FINISH/BUDGET/ERROR get an explicit end-of-turn marker.
@@ -90,7 +110,7 @@ class ChatRunner:
     def run_task(self, repo: str, goal: str, accept: str | None = None) -> int:
         self.presenter.welcome(repo, accept)
         history: list[Message] = [Message("user", goal)]
-        outcome = self._agent_loop(repo, accept, history)
+        outcome = self._agent_loop(repo, accept, history, intent="task")
         self.presenter.show_turn_end(outcome)
         # I1: --accept demands proof. rc 0 requires the accept test to have
         # gone green (outcome == "SUCCESS"); a self-certified Finish (or any
@@ -102,12 +122,19 @@ class ChatRunner:
             return 1
         return 0 if outcome in ("SUCCESS", "FINISH", "REPLIED") else 1
 
-    def _agent_loop(self, repo: str, accept: str | None, history: list[Message]) -> str:
+    def _agent_loop(
+        self,
+        repo: str,
+        accept: str | None,
+        history: list[Message],
+        intent: str | None = None,
+    ) -> str:
         # G4: reset the per-turn event log so each report covers exactly one task.
         self.task_events = []
         parse_failures = 0
+        intent = intent or self._request_intent(history)
         for _ in range(self.config.max_iterations):
-            ctx = self.context_manager.build_chat(repo, accept, history)
+            ctx = self.context_manager.build_chat(repo, accept, history, intent=intent)
             raw = self.llm.complete(ctx)
             try:
                 prose, action = split_prose_and_action(raw)
@@ -126,6 +153,14 @@ class ChatRunner:
                     self._emit_report("ERROR", "ERROR")
                     return "ERROR"
                 continue
+            if action is not None and not self._action_allowed(action, intent):
+                reason = (
+                    "action blocked: this request is read-only; no files were changed. "
+                    "Ask explicitly for a change before using write/edit/test/shell actions."
+                )
+                self.presenter.show_deny(reason)
+                history.append(Message("assistant", raw))
+                return "REPLIED"
             self.presenter.show_prose(prose)
             if action is None:
                 # Pure-prose reply (no tool action): END the turn and return
@@ -139,17 +174,6 @@ class ChatRunner:
                 # report (avoids noise on simple Q&A); one that DID act shows it.
                 self._emit_report("REPLIED", prose)
                 return "REPLIED"
-            if isinstance(action, (WriteFile, EditFile)) and not self._mutation_requested(history):
-                reason = "write blocked: the current request is informational; ask for a change before editing files"
-                self.presenter.show_deny(reason)
-                history.append(Message("assistant", raw))
-                history.append(
-                    Message(
-                        "user",
-                        "INTERNAL: " + reason + ". Reply in plain text or wait for a concrete change request.",
-                    )
-                )
-                continue
             # G2/G5: soft guardrail (+HITL) then HARD sandbox gate. Shared with
             # the `/tests` slash command via _gate() so neither path can bypass
             # the fence. When the Sandbox says Containerize and an executor is
@@ -238,18 +262,42 @@ class ChatRunner:
         self._emit_report("BUDGET_EXHAUSTED", "BUDGET_EXHAUSTED")
         return "BUDGET_EXHAUSTED"
 
-    @staticmethod
-    def _mutation_requested(history: list[Message]) -> bool:
-        """Conservatively gate writes for read/explain turns.
+    @classmethod
+    def _request_intent(cls, history: list[Message]) -> str:
+        """Classify the latest external request conservatively and locally.
 
-        The LLM may inspect files for an informational question, but a model
-        mistake must not turn that question into a write merely because the
-        system prompt suggested coding actions. Require a mutation verb even
-        when an acceptance selector was supplied, and reject common read-only
-        negations.
+        Unknown requests default to inspection, so a model cannot turn an
+        ambiguous question into a write. ``run_task`` supplies ``task``
+        explicitly because its CLI contract is already a change-oriented task.
         """
 
-        prompt = next(
+        prompt = cls._latest_external_prompt(history)
+        if any(term in prompt for term in _READ_ONLY_NEGATIONS):
+            return "inspect"
+        if any(term in prompt for term in ("guided demo", "run demo", "run the demo", "red-green", "red green", "运行演示", "执行演示", "开始演示")):
+            return "demo"
+        if cls._starts_with_any(prompt, _QUESTION_PREFIXES) and not (
+            cls._starts_with_any(prompt, _EXPLICIT_CHANGE_PREFIXES)
+            or cls._starts_with_any(prompt, _EXPLICIT_OPERATION_PREFIXES)
+        ):
+            if any(term in prompt for term in ("explain", "how ", "why ", "解释", "说明", "原理", "为什么", "怎么工作")):
+                return "explain"
+            return "inspect"
+        if any(term in prompt for term in _MUTATION_TERMS):
+            return "change"
+        if any(term in prompt for term in ("run ", "run test", "run tests", "test this", "check tests", "运行测试", "测试一下")):
+            return "operate"
+        if any(term in prompt for term in ("explain", "how does", "how do", "why", "解释", "说明", "原理", "为什么", "怎么工作")):
+            return "explain"
+        return "inspect"
+
+    @staticmethod
+    def _starts_with_any(prompt: str, prefixes: tuple[str, ...]) -> bool:
+        return any(prompt == prefix.strip() or prompt.startswith(prefix) for prefix in prefixes)
+
+    @staticmethod
+    def _latest_external_prompt(history: list[Message]) -> str:
+        return next(
             (
                 item.content.strip().lower()
                 for item in reversed(history)
@@ -258,9 +306,14 @@ class ChatRunner:
             ),
             "",
         )
-        if any(term in prompt for term in _READ_ONLY_NEGATIONS):
-            return False
-        return any(term in prompt for term in _MUTATION_TERMS)
+
+    @staticmethod
+    def _action_allowed(action: Action, intent: str) -> bool:
+        if intent in ("inspect", "explain"):
+            return isinstance(action, _READ_ONLY_ACTIONS)
+        if intent == "operate":
+            return isinstance(action, _OPERATE_ACTIONS)
+        return True
 
     def _emit_report(self, outcome: str, agent_summary: str) -> None:
         # G4: build + render the structured end-of-task summary. A pure-prose
