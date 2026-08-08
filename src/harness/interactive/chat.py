@@ -1,3 +1,5 @@
+import re
+
 from harness.actions.parser import ParseError, split_prose_and_action
 from harness.actions.protocol import (
     Action,
@@ -45,6 +47,7 @@ _EXPLICIT_OPERATION_PREFIXES = (
     "run ", "test ", "check tests", "please run", "can you run", "could you run",
     "运行", "执行测试", "运行测试", "测试一下",
 )
+_CJK_RE = re.compile(r"[\u3400-\u9fff]")
 
 
 class ChatRunner:
@@ -133,8 +136,15 @@ class ChatRunner:
         self.task_events = []
         parse_failures = 0
         intent = intent or self._request_intent(history)
+        response_language = self._response_language(history)
         for _ in range(self.config.max_iterations):
-            ctx = self.context_manager.build_chat(repo, accept, history, intent=intent)
+            ctx = self.context_manager.build_chat(
+                repo,
+                accept,
+                history,
+                intent=intent,
+                response_language=response_language,
+            )
             raw = self.llm.complete(ctx)
             try:
                 prose, action = split_prose_and_action(raw)
@@ -306,6 +316,13 @@ class ChatRunner:
             ),
             "",
         )
+
+    @classmethod
+    def _response_language(cls, history: list[Message]) -> str:
+        """Choose a deterministic output-language directive for chat prose."""
+
+        prompt = cls._latest_external_prompt(history)
+        return "Simplified Chinese" if _CJK_RE.search(prompt) else "English"
 
     @staticmethod
     def _action_allowed(action: Action, intent: str) -> bool:

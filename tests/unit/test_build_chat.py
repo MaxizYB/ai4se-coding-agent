@@ -12,6 +12,7 @@ def test_build_chat_has_system_repo_and_accept(tmp_path):
     assert "tests/t.py::test_a" in msgs[0].content
     assert "Request mode: inspect" in msgs[0].content
     assert "read-only repository inspection" in msgs[0].content
+    assert "Response language: English" in msgs[0].content
     assert "ACTION:" in msgs[0].content  # protocol reminder
 
 

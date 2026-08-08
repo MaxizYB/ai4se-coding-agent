@@ -265,6 +265,20 @@ def test_informational_request_blocks_model_write(tmp_path):
     assert "return a - b" in (tmp_path / "src" / "foo.py").read_text()
 
 
+def test_chinese_request_sets_chinese_response_language(tmp_path):
+    _repo(tmp_path)
+    seen = []
+
+    def reply(messages):
+        seen.append(messages[0].content)
+        return "仓库内容已经列出。"
+
+    r, pres = _runner(tmp_path, reply, iter(["仓库有什么", "/exit"]))
+    r.run(str(tmp_path), accept=None)
+    assert "Response language: Simplified Chinese" in seen[0]
+    assert "仓库内容已经列出。" in pres.out.getvalue()
+
+
 # --- G2: Sandbox gate fires AFTER the guardrail Allow. The guardrail is made
 # permissive here (no dangerous patterns; tests/ admitted to the write SCOPE)
 # so the Sandbox is the SOLE gate that can deny these actions -- proving the

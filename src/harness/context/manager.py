@@ -29,6 +29,10 @@ The request mode below is determined by the host application and is authoritativ
 Never broaden a read-only or explanatory request into a coding task.
 Request mode: {intent}
 {intent_rules}
+Response language: {response_language}
+Write every user-visible prose reply in {response_language}. Keep ACTION protocol
+keywords and field names in English, but never switch the explanatory prose to a
+different language.
 
 Each turn, do exactly one of:
 - Emit a tool action (one short line of prose, then the ACTION block) to make progress.
@@ -216,6 +220,7 @@ class ContextManager:
         accept: str | None,
         history: list[Message],
         intent: str = "inspect",
+        response_language: str = "English",
     ) -> list[Message]:
         accept_line = f"\nAcceptance: the test '{accept}' passing (green) means success." if accept else ""
         intent_rules = _INTENT_RULES.get(intent, _INTENT_RULES["inspect"])
@@ -226,6 +231,7 @@ class ContextManager:
                 accept=accept_line,
                 intent=intent,
                 intent_rules=intent_rules,
+                response_language=response_language,
             ),
         )
         msgs = [system]
