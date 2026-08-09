@@ -25,7 +25,7 @@
 | T18 | ZhipuLLMClient | ✅ done | `6a0f6bc` |
 | T19 | CLI | ✅ done | `13db363`+`5c6bc68` |
 | T20 | §A.6 mechanism demo | ✅ done | `d68552d`+`85a81e9` |
-| T21 | WebUI | ✅ done | `d6301cc`+`5de9c02`+`ce9f5af`+`8964e2f`+`7665da7`+`573c4a3`+`d477672`+`ce6d5d6`+`783b557` |
+| T21 | WebUI | ✅ done | `d6301cc`+`5de9c02`+`ce9f5af`+`8964e2f`+`7665da7`+`573c4a3`+`d477672`+`ce6d5d6`+`783b557`+`45dbb5a` |
 | T22 | Docker + CI | ✅ done | `7828fc5`+`5de9c02` |
 | Chat-T1..T6 | Conversational CLI (split_prose/presenter/build_chat/ChatRunner/cli/docs) | ✅ done | `7b0aed2`..`b3cfd32` |
 | Gov-G1..G5 | Governance deep-dim (Sandbox/Diff/TaskReport/Docker) | ✅ done | `bed37f3`..`e03b134` |
