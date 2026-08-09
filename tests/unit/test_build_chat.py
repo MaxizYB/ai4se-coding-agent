@@ -10,9 +10,11 @@ def test_build_chat_has_system_repo_and_accept(tmp_path):
     assert msgs[0].role == "system"
     assert "/my/repo" in msgs[0].content
     assert "tests/t.py::test_a" in msgs[0].content
-    assert "Request mode: inspect" in msgs[0].content
-    assert "read-only repository inspection" in msgs[0].content
+    assert "sole task boundary" in msgs[0].content
+    assert "does not authorize you to repair" in msgs[0].content
     assert "Response language: English" in msgs[0].content
+    assert "return a - b" not in msgs[0].content
+    assert "tests/test_foo.py::test_add" not in msgs[0].content
     assert "ACTION:" in msgs[0].content  # protocol reminder
 
 

@@ -11,7 +11,6 @@ from harness.interactive.presenter import Presenter
 from harness.llm.mock import MockLLMClient
 from harness.memory.store import MemoryStore
 from harness.tools.dispatcher import ToolDispatcher
-from harness.types import Message
 
 
 def _repo(tmp_path):
@@ -244,25 +243,24 @@ def test_pure_prose_reply_ends_turn_without_finish(tmp_path):
     assert "Reading foo." in text
 
 
-def test_informational_request_blocks_model_write(tmp_path):
+def test_chat_prompt_keeps_inspection_within_the_user_request(tmp_path):
     _repo(tmp_path)
-    assert ChatRunner._request_intent([Message("user", "what changes are in this repository?")]) == "inspect"
-    assert ChatRunner._request_intent([Message("user", "can you fix the failing test?")]) == "change"
-    script = [
-        "I found the likely issue.\n" + EDIT,
-        "I will make the source change now.\n" + EDIT,
-        "The repository is unchanged; ask for a concrete fix when needed.",
-    ]
+    script = ["Listing the repository.\nACTION: list_dir\n", "仓库中包含 src 和 tests。"]
     lines = iter(["仓库里面有什么", "/exit"])
     r, pres = _runner(tmp_path, script, lines)
-    r.run(str(tmp_path), accept="tests/test_foo.py::test_add")
+    r.run(str(tmp_path), accept=None)
     text = pres.out.getvalue()
-    assert text.count("action blocked") == 1
-    assert "I found the likely issue." not in text
-    assert "I will make the source change now." not in text
-    assert "proposed change" not in text
-    assert r.llm._i == 1  # refusal returns control; it does not re-prompt the model
+    assert "ListDir" in text
+    assert "仓库中包含 src 和 tests。" in text
     assert "return a - b" in (tmp_path / "src" / "foo.py").read_text()
+
+
+def test_chat_allows_a_general_natural_language_creation_task(tmp_path):
+    _repo(tmp_path)
+    game = "ACTION: write_file\nPATH: src/game.py\n<<<\ndef play():\n    return 'ready'\n>>>\n"
+    r, _ = _runner(tmp_path, ["Creating the game.\n" + game], iter(["帮我做一个小游戏", "/exit"]))
+    r.run(str(tmp_path), accept=None)
+    assert (tmp_path / "src" / "game.py").read_text() == "def play():\n    return 'ready'\n"
 
 
 def test_chinese_request_sets_chinese_response_language(tmp_path):

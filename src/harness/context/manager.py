@@ -25,10 +25,12 @@ Rules: prefer edit_file over write_file; run run_tests to verify; emit finish wh
 
 _CHAT_SYSTEM = """You are a coding agent working in the repository at {repo}.
 
-The request mode below is determined by the host application and is authoritative.
-Never broaden a read-only or explanatory request into a coding task.
-Request mode: {intent}
-{intent_rules}
+The user's most recent request is the sole task boundary. Never infer, substitute,
+or extend that task from repository contents, prior examples, or a familiar failure
+pattern. If the user asks to inspect or explain, retrieve only what is needed and
+answer that request. Finding a defect, a failing test, or a possible improvement
+does not authorize you to repair it, propose a repair, or run unrelated tests.
+If the request is ambiguous, ask a concise question in plain text before acting.
 Response language: {response_language}
 Write every user-visible prose reply in {response_language}. Keep ACTION protocol
 keywords and field names in English, but never switch the explanatory prose to a
@@ -50,40 +52,40 @@ KEY: VALUE            # PATH: ... / ARGS: ... / COMMAND: ... / REASON: ...
 Exact examples (copy the format precisely):
 
   ACTION: read_file
-  PATH: src/foo.py
+  PATH: src/module.py
 
   ACTION: list_dir
   PATH: src
 
   ACTION: write_file
-  PATH: src/new.py
-  print('hello')        # file content can be raw text after PATH (no fence needed),
-  x = 1                 # OR a <<<...>>> block — either works.
+  PATH: src/new_module.py
+  value = 1             # file content can be raw text after PATH (no fence needed),
+  enabled = True        # OR a <<<...>>> block — either works.
 
   ACTION: edit_file
-  PATH: src/foo.py
+  PATH: src/settings.py
   <<<OLD
-      return a - b
+  enabled = False
   >>>OLD
   <<<NEW
-      return a + b
+  enabled = True
   >>>NEW
 
   ACTION: run_shell
-  COMMAND: python src/game.py
+  COMMAND: python -m module
   STDIN:
   5                      # stdin goes on the lines AFTER "STDIN:" (multi-line OK),
   3                      # so you can drive interactive programs that read input.
   7
 
   ACTION: run_tests
-  ARGS: tests/test_foo.py::test_add
+  ARGS: tests/test_module.py::test_value
 
   ACTION: finish
   REASON: task complete
 
   ACTION: grep_search
-  PATTERN: def add
+  PATTERN: def target
   PATH: src
 
 Rules:
@@ -93,29 +95,6 @@ Rules:
 - run_shell STDIN is optional — use it to feed input to interactive programs; omit for non-interactive commands.
 - After editing, run run_tests to verify (when the project has tests).
 - One action per turn when acting. Plain text with no ACTION = a reply that ends your turn.{accept}"""
-
-_INTENT_RULES = {
-    "inspect": (
-        "This is a read-only repository inspection. You may use only read_file, "
-        "list_dir, grep_search, or finish. Do not run tests, run shell commands, "
-        "write files, edit files, diagnose a defect as a requested fix, or propose "
-        "a change unless the user asks for one."
-    ),
-    "explain": (
-        "This is an explanation request. You may inspect files with read_file, "
-        "list_dir, or grep_search, then answer in plain text. Do not run tests or "
-        "change files."
-    ),
-    "operate": (
-        "This request permits observation and explicitly requested test/shell "
-        "operations, but it does not permit source edits unless the user also asks "
-        "for a change."
-    ),
-    "change": "The user explicitly requested a change. Make the smallest safe edit and verify it.",
-    "demo": "Run the explicitly requested guided demonstration using its scripted red-green flow.",
-    "task": "This is an explicit task-mode request. Complete the requested task and verify it.",
-}
-
 
 def locate_impl_module(test_path: str) -> str | None:
     """Static import trace: parse `test_path`, find the first `from <pkg> import ...`
@@ -219,18 +198,14 @@ class ContextManager:
         repo: str,
         accept: str | None,
         history: list[Message],
-        intent: str = "inspect",
         response_language: str = "English",
     ) -> list[Message]:
         accept_line = f"\nAcceptance: the test '{accept}' passing (green) means success." if accept else ""
-        intent_rules = _INTENT_RULES.get(intent, _INTENT_RULES["inspect"])
         system = Message(
             "system",
             _CHAT_SYSTEM.format(
                 repo=repo,
                 accept=accept_line,
-                intent=intent,
-                intent_rules=intent_rules,
                 response_language=response_language,
             ),
         )
